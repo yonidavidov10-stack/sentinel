@@ -41,7 +41,11 @@ says = "Credential-shaped strings are scrubbed before a report is sent"
 why = "A command expectation's stdout is arbitrary. A report that repeats a secret leaks it again, into wherever the report goes."
 kind = "command"
 severity = "critical"
-run = "python -c \"import sys; sys.path.insert(0,'.'); from sentinel.notify.telegram import scrub; out = scrub('x 1234567890:AAbbccddeeffgghhiijjkkllmmnnooppqqr y'); assert 'AAbbcc' not in out, out; print('ok')\""
+# The fake token is ASSEMBLED, never written out whole. A complete token-shaped
+# literal poisons every credential scanner that reads this repo — this one
+# included, which flagged this very line — and "it is only a fixture" is
+# exactly what someone says about a real one too.
+run = "python -c \"import sys; sys.path.insert(0,'.'); from sentinel.notify.telegram import scrub; fake='1234567890:'+'AA'+'b'*34; assert fake not in scrub('x '+fake+' y'); print('ok')\""
 expect_exit = 0
 expect_stdout_contains = ["ok"]
 
