@@ -49,6 +49,21 @@ def run(command: str, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
     # Keeps unittest/pytest output parseable regardless of the terminal.
     env.setdefault("NO_COLOR", "1")
     env.setdefault("PYTHONUNBUFFERED", "1")
+
+    # A project's virtualenv goes on PATH ahead of everything else, so a
+    # manifest can just say `python -m pytest` and mean the right interpreter
+    # in both places. Without this, a manifest has to choose: `python3` finds
+    # the system interpreter locally (which has none of the project's
+    # dependencies and reports the suite as broken), while `.venv/bin/python`
+    # does not exist on a CI runner. Encoding that choice as shell conditionals
+    # in every manifest is how a config format becomes a programming language.
+    for venv in ("venv", ".venv"):
+        bin_dir = Path(cwd) / venv / "bin"
+        if bin_dir.is_dir():
+            env["PATH"] = f"{bin_dir}{os.pathsep}{env.get('PATH', '')}"
+            env["VIRTUAL_ENV"] = str(Path(cwd) / venv)
+            break
+
     if env_extra:
         env.update({str(k): str(v) for k, v in env_extra.items()})
 

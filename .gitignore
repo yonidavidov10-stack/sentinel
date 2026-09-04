@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.venv/
+venv/
+.DS_Store
+.vscode/
+.idea/
+# Secrets never belong here — this repository is public — but the ignore lines
+# exist so a stray local file cannot be staged by accident.
+.env
+*.pem
+secrets*

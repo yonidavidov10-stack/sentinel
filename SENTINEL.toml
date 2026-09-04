@@ -1,0 +1,64 @@
+[project]
+name = "sentinel"
+purpose = """
+A project auditor. Each project writes down what it promises to do in its own
+SENTINEL.toml, and this checks whether those promises still hold — alongside
+security and health. Its central discipline: a check that could not run reports
+UNKNOWN, never a pass, because an auditor that quietly reports health it did
+not verify is worse than no auditor at all.
+"""
+
+[commands]
+# Plain `python`: sentinel puts the project's venv on PATH when there
+# is one, so this means the right interpreter locally and in CI.
+tests = "python -m pytest tests -q"
+min_tests = 25
+
+[[expectations]]
+id = "unknown-is-never-a-pass"
+says = "A check that could not run reports UNKNOWN, and UNKNOWN is actionable"
+why = "The single discipline the whole tool rests on. If UNKNOWN ever counts as a pass, every report it has ever produced becomes untrustworthy."
+kind = "command"
+severity = "critical"
+run = "python -c \"import sys; sys.path.insert(0,'.'); from sentinel.verdict import Verdict; assert Verdict.UNKNOWN.is_actionable; assert not Verdict.PASS.is_actionable; print('ok')\""
+expect_exit = 0
+expect_stdout_contains = ["ok"]
+
+[[expectations]]
+id = "a-failure-must-carry-evidence"
+says = "A FAIL finding cannot be created without detail or evidence"
+why = "A failure nobody can act on is noise, and noise trains people to ignore the report."
+kind = "command"
+severity = "high"
+run = "python -c \"import sys; sys.path.insert(0,'.'); from sentinel.verdict import Finding, Verdict; \ntry:\n    Finding(check='x', title='y', verdict=Verdict.FAIL); print('LEAKED')\nexcept ValueError: print('ok')\""
+expect_exit = 0
+expect_stdout_contains = ["ok"]
+expect_stdout_absent = ["LEAKED"]
+
+[[expectations]]
+id = "reports-never-quote-a-credential"
+says = "Credential-shaped strings are scrubbed before a report is sent"
+why = "A command expectation's stdout is arbitrary. A report that repeats a secret leaks it again, into wherever the report goes."
+kind = "command"
+severity = "critical"
+run = "python -c \"import sys; sys.path.insert(0,'.'); from sentinel.notify.telegram import scrub; out = scrub('x 1234567890:AAbbccddeeffgghhiijjkkllmmnnooppqqr y'); assert 'AAbbcc' not in out, out; print('ok')\""
+expect_exit = 0
+expect_stdout_contains = ["ok"]
+
+[[expectations]]
+id = "no-secrets-of-its-own"
+says = "The auditor holds no credentials, so it is safe to publish"
+why = "It is a public repository. Everything project-specific lives in each project's own SENTINEL.toml, in that project's private repo."
+kind = "grep"
+severity = "critical"
+pattern = "\\d{8,10}:AA[\\w-]{30,}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}"
+paths = ["sentinel", "tests"]
+must_match = false
+ignore_comments = true
+remedy = "Remove it and rotate it. This repository is public."
+
+[security]
+# The scanner finds the patterns it is looking for, in the file that lists
+# them. Silenced by naming the marker rather than the whole file: a real
+# eval() added to security.py later would still be flagged.
+allow_patterns = ["executes whatever reaches it"]
