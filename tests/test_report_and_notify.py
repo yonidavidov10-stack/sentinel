@@ -135,3 +135,39 @@ def test_splitting_prefers_paragraph_boundaries():
 def test_send_without_a_token_fails_cleanly_rather_than_raising():
     r = telegram.send("hi", "", ["1"])
     assert not r.ok and r.messages_sent == 0
+
+
+# ── a run in progress is not a failed run ──────────────────────────────
+def test_a_ci_run_still_in_progress_is_unknown_not_failed(monkeypatch, tmp_path):
+    """It is not broken, and the audit is often what triggered the run it is
+    now judging. `gh --jq` renders a null conclusion as the string "null"."""
+    from sentinel.checks import base, health
+    from sentinel.manifest import Manifest
+
+    monkeypatch.setattr(health, "which", lambda b: True)
+    monkeypatch.setattr(
+        health, "run",
+        lambda *a, **k: base.Run(ok=True, exit_code=0,
+                                 stdout="null|tests|https://example/1",
+                                 stderr=""))
+    findings = []
+    health._ci_status(Manifest(path=tmp_path / "m", name="n", purpose="p"),
+                      findings)
+    assert findings[0].verdict is Verdict.UNKNOWN
+    assert "not finished" in findings[0].detail
+
+
+def test_a_genuinely_failed_ci_run_still_fails(monkeypatch, tmp_path):
+    from sentinel.checks import base, health
+    from sentinel.manifest import Manifest
+
+    monkeypatch.setattr(health, "which", lambda b: True)
+    monkeypatch.setattr(
+        health, "run",
+        lambda *a, **k: base.Run(ok=True, exit_code=0,
+                                 stdout="failure|tests|https://example/1",
+                                 stderr=""))
+    findings = []
+    health._ci_status(Manifest(path=tmp_path / "m", name="n", purpose="p"),
+                      findings)
+    assert findings[0].verdict is Verdict.FAIL

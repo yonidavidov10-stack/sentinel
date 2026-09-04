@@ -153,6 +153,20 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
         return
     parts = r.stdout.strip().split("|")
     conclusion = parts[0] if parts else ""
+
+    # A run still in progress has no conclusion yet, and `gh --jq` renders that
+    # as the string "null". Calling it a failure is wrong twice over: it is not
+    # broken, and the audit itself is usually what triggered the run it is now
+    # judging. UNKNOWN is the honest answer — nobody knows yet.
+    if conclusion in ("null", "", "unknown", "None"):
+        findings.append(Finding(
+            check=NAME, title="The latest CI run is green",
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="the latest run has not finished, so there is no result yet",
+            evidence=r.stdout.strip(),
+            remedy="Re-run the audit once CI settles."))
+        return
+
     if conclusion == "success":
         findings.append(Finding(
             check=NAME, title="The latest CI run is green",

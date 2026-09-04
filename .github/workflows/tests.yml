@@ -17,10 +17,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+      # No `cache: pip` — it needs a requirements.txt or pyproject.toml, and
+      # this project has neither ON PURPOSE: it depends on nothing outside the
+      # standard library, so anything it can audit can run it.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
       - run: pip install pytest
       - run: python -m pytest tests -q
 
