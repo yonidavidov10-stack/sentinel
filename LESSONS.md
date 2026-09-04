@@ -119,6 +119,24 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L011 — A branch protection that locked out the only maintainer
+**Found** 2026-09-04, one minute after enabling it · **status: closed**
+
+`main` was protected with `required_status_checks: ["tests"]`. The next push
+was rejected: *"Required status check tests is expected."* The check runs **on**
+a push, so it can never have passed for a commit that has not been pushed —
+and with no pull-request flow on a single-maintainer repo, there was no other
+way in. A protection that blocks the person it protects is not protection, it
+is a lockout.
+
+Force-push and deletion blocking are the parts that actually matter here: they
+stop history being rewritten or lost. Required status checks belong with a
+pull-request flow, and adding one without the other is the mistake.
+
+**Check:** none yet — GitHub branch settings are not in the repository, so
+nothing in a checkout can see them. `unmechanisable` from inside the repo; it
+would need an API call, and that is a real candidate for a future kind.
+
 ## L010 — An undocumented schedule
 **Found** 2026-09-04, by the owner asking why · **status: open**
 
