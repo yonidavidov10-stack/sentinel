@@ -1,0 +1,173 @@
+name: Self-improvement pass
+
+# The auditor improves itself, on the same pattern as the project it audits.
+#
+# WITH ONE GUARD THAT PROJECT DOES NOT NEED. A daemon improving a verification
+# tool has a shortcut available to it that a daemon improving a screener does
+# not: it can make the report green by weakening what is checked. Deleting a
+# test, softening an assertion, or turning an UNKNOWN into a PASS all look like
+# progress in the diff and are the opposite of it.
+#
+# So the test count may never fall, and the one rule the tool rests on is
+# re-asserted after the pass, from outside the pass.
+
+on:
+  schedule:
+    - cron: "10 7 * * 1"      # Mondays, 07:10 UTC — once a week is enough for
+                              # a tool this size, and a weekly cadence keeps
+                              # each diff small enough to actually read
+  workflow_dispatch:
+
+concurrency:
+  group: self-improve
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  improve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Honour the STOP kill switch
+        run: |
+          if [ -f STOP ]; then
+            echo "STOP file present — skipping this pass."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pytest
+
+      # Recorded BEFORE the pass, so the check afterwards compares against
+      # what was really there rather than what the pass says was there.
+      - name: Count the tests before
+        id: before
+        run: |
+          N=$(python -m pytest tests -q 2>&1 | sed -n 's/^\([0-9][0-9]*\) passed.*/\1/p')
+          echo "count=${N:-0}" >> "$GITHUB_OUTPUT"
+          echo "Before: ${N:-0} tests"
+
+      - name: Run one improvement pass
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          claude_args: --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git *),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
+          prompt: |
+            Scheduled self-improvement pass on `sentinel`, a project auditor.
+            Read README.md first — it states what the tool is for and the one
+            rule everything rests on.
+
+            THE RULE: a check that could not run reports UNKNOWN, never a pass.
+            An auditor that folds "I could not reach it" into "fine" is worse
+            than no auditor, because its entire value is that someone reads it
+            instead of looking themselves. Nothing you do may weaken this.
+
+            YOU ARE IMPROVING A VERIFICATION TOOL, which gives you a shortcut
+            that does not exist elsewhere: you can make any report green by
+            checking less. Deleting a test, softening an assertion, widening an
+            allow-list, or turning an UNKNOWN into a PASS all read as progress
+            in a diff and are its opposite. THE TEST COUNT MAY NOT FALL — it is
+            asserted after you finish, against a number recorded before you
+            started. If a test is genuinely wrong, replace it with a better one
+            in the same pass and say so in the commit message.
+
+            OFF LIMITS, enforced after you finish:
+            - .github/workflows/** — your own schedule, permissions and tool
+              allowlist. A pass that can widen its own permissions is not a
+              safety boundary.
+
+            Work in priority order and STOP once you would be guessing:
+
+            1. RUN THE SUITE (`python -m pytest tests -q`) and the tool against
+               itself (`python -m sentinel.cli run .`). Fix what is broken
+               before adding anything.
+            2. THE HIGHEST-VALUE WORK IS A NEW EXPECTATION KIND or a sharper
+               check — something a real project needs to state about itself and
+               currently cannot. Prefer that over refactoring.
+            3. FALSE POSITIVES ARE BUGS, and expensive ones: a scanner that
+               cries wolf gets muted, and a muted scanner looks like coverage.
+               A finding a reader would dismiss is worse than no finding.
+            4. NON-CODE WORK COUNTS. Clearer remedies, better README, a comment
+               explaining WHY a check exists rather than what it does.
+            5. VERIFY by running it. Never claim something works without
+               executing it.
+            6. COMMIT with a message stating what you verified and how.
+
+            Every check must keep answering three questions in its finding:
+            what is wrong, how do I know, and what should I do. A finding
+            without evidence and a remedy is noise, and noise trains people to
+            ignore the whole report.
+
+      - name: Restore git credentials for the steps below
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git remote set-url origin \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git config user.name  "sentinel-improve bot"
+          git config user.email "yonidavidov10@gmail.com"
+
+      - name: Revert changes to protected paths
+        run: |
+          git fetch origin main -q
+          if ! git diff --quiet origin/main -- .github/workflows; then
+            echo "::warning::This pass modified its own workflows — reverting."
+            git checkout origin/main -- .github/workflows
+            git commit -m "Revert changes to .github/workflows" -- .github/workflows || true
+          fi
+
+      # THE GUARD. Checked from outside the pass, against a count taken before
+      # it, so the pass cannot report its own compliance.
+      - name: The test count may not fall
+        run: |
+          AFTER=$(python -m pytest tests -q 2>&1 | sed -n 's/^\([0-9][0-9]*\) passed.*/\1/p')
+          BEFORE=${{ steps.before.outputs.count }}
+          echo "Before: $BEFORE   After: ${AFTER:-0}"
+          if [ -z "$AFTER" ] || [ "$AFTER" -lt "$BEFORE" ]; then
+            echo "::error::Tests went from $BEFORE to ${AFTER:-0}. A pass that
+            checks less is not an improvement. Reverting everything."
+            git reset --hard origin/main
+            exit 1
+          fi
+
+      # Re-asserted from outside, in case the pass edited the module that
+      # defines it. If this ever fails, every report the tool has produced
+      # becomes untrustworthy.
+      - name: UNKNOWN is still never a pass
+        run: |
+          python -c "
+          from sentinel.verdict import Verdict
+          assert Verdict.UNKNOWN.is_actionable, 'UNKNOWN stopped being actionable'
+          assert not Verdict.PASS.is_actionable
+          print('the rule holds')
+          "
+
+      - name: The tool still passes its own audit
+        run: python -m sentinel.cli run . --only intent
+
+      - name: Push anything the pass committed
+        run: |
+          if [ -z "$(git log origin/main..HEAD --oneline)" ]; then
+            echo "No commits this pass."
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if git pull --rebase --autostash origin main && git push origin main; then
+              echo "Pushed on attempt $attempt."
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Could not push after 3 attempts."
+          exit 1
