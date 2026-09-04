@@ -73,6 +73,26 @@ class Finding:
     evidence: str = ""
     remedy: str = ""
 
+    # Hebrew renderings, used by the Telegram reporter. EXPLICIT FIELDS rather
+    # than a lookup keyed on the English title: a translation table matched by
+    # string breaks silently the moment someone rewords a title, and the report
+    # quietly reverts to English without anyone noticing why.
+    title_he: str = ""
+    detail_he: str = ""
+    remedy_he: str = ""
+
+    def say(self, field: str, lang: str) -> str:
+        """The field in `lang`, falling back to English rather than to blank.
+
+        A missing translation must degrade to a readable English line, never to
+        an empty one — a finding with no title is a finding nobody can act on.
+        """
+        if lang == "he":
+            translated = getattr(self, f"{field}_he", "")
+            if translated:
+                return translated
+        return getattr(self, field, "")
+
     def __post_init__(self):
         if self.verdict is Verdict.FAIL and not (self.detail or self.evidence):
             # A failure nobody can act on is noise, and noise trains people to

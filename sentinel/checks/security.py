@@ -76,7 +76,7 @@ def check(m: Manifest) -> CheckResult:
         files, why_not = _tracked_files(root)
         if why_not:
             findings.append(Finding(
-                check=NAME, title="Tracked files can be enumerated",
+                check=NAME, title="Tracked files can be enumerated", title_he="אפשר לרשום את הקבצים שבמעקב",
                 verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
                 detail=f"could not list tracked files: {why_not}",
                 remedy="Run sentinel inside a git repository."))
@@ -88,7 +88,7 @@ def check(m: Manifest) -> CheckResult:
                         if n in NEVER_TRACK or Path(n).name in NEVER_TRACK)
         if leaked:
             findings.append(Finding(
-                check=NAME, title="No secret-bearing file is tracked by git",
+                check=NAME, title="No secret-bearing file is tracked by git", title_he="אף קובץ שמכיל סודות אינו במעקב git",
                 verdict=Verdict.FAIL, severity=Severity.CRITICAL,
                 detail=f"{len(leaked)} file(s) that should never be committed",
                 evidence="\n".join(leaked),
@@ -96,7 +96,7 @@ def check(m: Manifest) -> CheckResult:
                        "ROTATE whatever it contained — it is in the history."))
         else:
             findings.append(Finding(
-                check=NAME, title="No secret-bearing file is tracked by git",
+                check=NAME, title="No secret-bearing file is tracked by git", title_he="אף קובץ שמכיל סודות אינו במעקב git",
                 verdict=Verdict.PASS, severity=Severity.CRITICAL,
                 detail=f"{len(files)} tracked files, none of them .env or a key"))
 
@@ -122,7 +122,7 @@ def check(m: Manifest) -> CheckResult:
                         break
         if hits:
             findings.append(Finding(
-                check=NAME, title="No credential is committed in the source",
+                check=NAME, title="No credential is committed in the source", title_he="אין אישור גישה מקובע בקוד",
                 verdict=Verdict.FAIL, severity=Severity.CRITICAL,
                 detail=f"{len(hits)} credential-shaped string(s) in tracked files",
                 evidence="\n".join(sorted(set(hits))[:20]),
@@ -131,7 +131,7 @@ def check(m: Manifest) -> CheckResult:
                        "compromised: it is in the git history."))
         else:
             findings.append(Finding(
-                check=NAME, title="No credential is committed in the source",
+                check=NAME, title="No credential is committed in the source", title_he="אין אישור גישה מקובע בקוד",
                 verdict=Verdict.PASS, severity=Severity.CRITICAL,
                 detail="no credential-shaped strings in tracked text files"))
 
@@ -139,7 +139,7 @@ def check(m: Manifest) -> CheckResult:
         gi = root / ".gitignore"
         if not gi.is_file():
             findings.append(Finding(
-                check=NAME, title=".gitignore protects the usual secret paths",
+                check=NAME, title=".gitignore protects the usual secret paths", title_he=".gitignore מכסה את נתיבי הסודות הרגילים",
                 verdict=Verdict.WARN, severity=Severity.MEDIUM,
                 detail="there is no .gitignore",
                 remedy="Add one covering .env, secrets, and virtualenvs."))
@@ -149,14 +149,14 @@ def check(m: Manifest) -> CheckResult:
                        if p not in body]
             if missing:
                 findings.append(Finding(
-                    check=NAME, title=".gitignore protects the usual secret paths",
+                    check=NAME, title=".gitignore protects the usual secret paths", title_he=".gitignore מכסה את נתיבי הסודות הרגילים",
                     verdict=Verdict.WARN, severity=Severity.MEDIUM,
                     detail=f"not covered: {', '.join(missing)}",
                     evidence=str(gi.relative_to(root)),
                     remedy="Add those lines to .gitignore."))
             else:
                 findings.append(Finding(
-                    check=NAME, title=".gitignore protects the usual secret paths",
+                    check=NAME, title=".gitignore protects the usual secret paths", title_he=".gitignore מכסה את נתיבי הסודות הרגילים",
                     verdict=Verdict.PASS, severity=Severity.MEDIUM,
                     detail="covers .env, keys and secrets"))
 
@@ -188,7 +188,7 @@ def check(m: Manifest) -> CheckResult:
             flat = [x for sev in sorted(risky, key=lambda s: s.rank)
                     for x in risky[sev]]
             findings.append(Finding(
-                check=NAME, title="No high-risk code patterns in tracked source",
+                check=NAME, title="No high-risk code patterns in tracked source", title_he="אין דפוסי קוד בסיכון גבוה בקוד שבמעקב",
                 verdict=Verdict.WARN, severity=worst,
                 detail=f"{len(flat)} occurrence(s) worth a human's eye",
                 evidence="\n".join(flat[:15]),
@@ -196,7 +196,7 @@ def check(m: Manifest) -> CheckResult:
                        "[security].allow_patterns in the manifest to silence it."))
         else:
             findings.append(Finding(
-                check=NAME, title="No high-risk code patterns in tracked source",
+                check=NAME, title="No high-risk code patterns in tracked source", title_he="אין דפוסי קוד בסיכון גבוה בקוד שבמעקב",
                 verdict=Verdict.PASS, severity=Severity.MEDIUM,
                 detail="none found"))
 

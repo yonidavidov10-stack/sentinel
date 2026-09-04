@@ -35,7 +35,8 @@ MANIFEST_NAME = "SENTINEL.toml"
 # Every expectation kind the runner knows. A manifest naming anything else is a
 # manifest with a hole in it, and `Expectation.known` says so rather than the
 # loader silently discarding the entry.
-KINDS = {"command", "freshness", "file_exists", "file_absent", "grep"}
+KINDS = {"command", "freshness", "file_exists", "file_absent", "grep",
+         "schedule_after"}
 
 SEVERITIES = {"critical", "high", "medium", "low"}
 
@@ -49,6 +50,9 @@ class Expectation:
     why: str = ""                   # why it matters, for the report
     severity: str = "medium"
     config: dict = field(default_factory=dict)
+    # Optional Hebrew rendering of the promise, for reports sent in Hebrew.
+    # A project writes `says_he` beside `says`; nothing else changes.
+    says_he: str = ""
 
     @property
     def known(self) -> bool:
@@ -135,10 +139,12 @@ def load(project_root: Path) -> Manifest:
                 f"reported UNKNOWN, not skipped")
 
         config = {k: v for k, v in item.items()
-                  if k not in ("id", "says", "kind", "why", "severity")}
+                  if k not in ("id", "says", "says_he", "kind", "why",
+                               "severity")}
         expectations.append(Expectation(
             id=eid, says=says, kind=kind, why=str(item.get("why", "")),
-            severity=severity, config=config))
+            severity=severity, config=config,
+            says_he=str(item.get("says_he", ""))))
 
     return Manifest(
         path=path,

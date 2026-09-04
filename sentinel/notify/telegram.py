@@ -151,7 +151,11 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
     by_verdict = {v: [f for f in actionable if f.verdict is v]
                   for v in (Verdict.FAIL, Verdict.UNKNOWN, Verdict.WARN)}
 
-    L = [f"🛠 <b>{_esc(audit.manifest.name)}</b>", ""]
+    # Name the SENDER as well as the subject. The first live message said only
+    # "stock-predictor", which reads as a message from that project rather than
+    # a bug report about it — and once several projects report here, the
+    # distinction is the whole point of the line.
+    L = [f"🛠 <b>בודק הבאגים</b> · {_esc(audit.manifest.name)}", ""]
     counts = []
     if by_verdict[Verdict.FAIL]:
         counts.append(f"❌ {len(by_verdict[Verdict.FAIL])} נשברו")
@@ -172,16 +176,18 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
         L.append(f"<b>{titles[verdict]}</b>")
         for f in items:
             L.append("")
-            L.append(f"• <b>{_esc(f.title)}</b>")
-            if f.detail:
-                L.append(f"  {_esc(f.detail)}")
+            L.append(f"• <b>{_esc(f.say('title', 'he'))}</b>")
+            detail = f.say("detail", "he")
+            if detail:
+                L.append(f"  {_esc(detail)}")
             # Evidence rides along only for genuine breakage. A warning with a
             # code dump attached is how a useful report becomes a wall of text.
             if verdict is Verdict.FAIL and f.evidence:
                 snippet = "\n".join(f.evidence.strip().splitlines()[:4])
                 L.append(f"  <code>{_esc(snippet[:300])}</code>")
-            if f.remedy:
-                L.append(f"  ↳ {_esc(f.remedy)}")
+            remedy = f.say("remedy", "he")
+            if remedy:
+                L.append(f"  ↳ {_esc(remedy)}")
 
     if by_verdict[Verdict.UNKNOWN]:
         L.append("")
@@ -191,7 +197,7 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
 
 def format_heartbeat(audit: Audit, clean_days: int) -> str:
     """The weekly all-clear. Its job is to make a GAP visible."""
-    return (f"🛠 <b>{_esc(audit.manifest.name)}</b>\n\n"
+    return (f"🛠 <b>בודק הבאגים</b> · {_esc(audit.manifest.name)}\n\n"
             f"✅ נקי — {audit.count(Verdict.PASS)} בדיקות עברו.\n"
             f"{clean_days} ימים רצופים בלי ממצא.\n\n"
             f"<i>ההודעה הזו נשלחת פעם בשבוע כדי שתדע שהבודק חי. "

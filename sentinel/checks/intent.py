@@ -39,7 +39,7 @@ def _unknown(e: Expectation, why: str, evidence: str = "") -> Finding:
     Never a pass. A promise nobody checked is exactly as unverified as a
     promise that failed, and the report says so.
     """
-    return Finding(check=NAME, title=e.says, verdict=Verdict.UNKNOWN,
+    return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.UNKNOWN,
                    severity=_sev(e), detail=why, evidence=evidence,
                    remedy=f"Make expectation '{e.id}' runnable, or remove it.")
 
@@ -82,10 +82,11 @@ def _check_command(e: Expectation, root: Path) -> Finding:
             problems.append(f"output contains {needle!r}, which it must not")
 
     if problems:
-        return Finding(check=NAME, title=e.says, verdict=Verdict.FAIL,
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL,
                        severity=_sev(e), detail="; ".join(problems),
-                       evidence=r.output, remedy=e.config.get("remedy", ""))
-    return Finding(check=NAME, title=e.says, verdict=Verdict.PASS,
+                       evidence=r.output, remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
+    return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
                    severity=_sev(e), detail=f"`{cmd}` behaved as promised")
 
 
@@ -115,11 +116,12 @@ def _check_freshness(e: Expectation, root: Path) -> Finding:
 
     target = root / str(rel)
     if not target.exists():
-        return Finding(check=NAME, title=e.says, verdict=Verdict.FAIL,
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL,
                        severity=_sev(e),
                        detail=f"{rel} does not exist at all",
                        evidence=str(target),
-                       remedy=e.config.get("remedy", ""))
+                       remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
 
     field = e.config.get("field")
     if field:
@@ -145,11 +147,12 @@ def _check_freshness(e: Expectation, root: Path) -> Finding:
 
     if age > float(max_age):
         return Finding(
-            check=NAME, title=e.says, verdict=Verdict.FAIL, severity=_sev(e),
+            check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL, severity=_sev(e),
             detail=f"last updated {age:.1f}h ago; the promise is every "
                    f"{max_age}h",
-            evidence=source, remedy=e.config.get("remedy", ""))
-    return Finding(check=NAME, title=e.says, verdict=Verdict.PASS,
+            evidence=source, remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
+    return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
                    severity=_sev(e),
                    detail=f"updated {age:.1f}h ago (limit {max_age}h)")
 
@@ -159,12 +162,13 @@ def _check_file_exists(e: Expectation, root: Path) -> Finding:
     if not rel:
         return _unknown(e, "kind='file_exists' needs a `path` key")
     if (root / str(rel)).exists():
-        return Finding(check=NAME, title=e.says, verdict=Verdict.PASS,
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
                        severity=_sev(e), detail=f"{rel} is present")
-    return Finding(check=NAME, title=e.says, verdict=Verdict.FAIL,
+    return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL,
                    severity=_sev(e), detail=f"{rel} is missing",
                    evidence=str(root / str(rel)),
-                   remedy=e.config.get("remedy", ""))
+                   remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
 
 
 def _check_file_absent(e: Expectation, root: Path) -> Finding:
@@ -172,12 +176,13 @@ def _check_file_absent(e: Expectation, root: Path) -> Finding:
     if not rel:
         return _unknown(e, "kind='file_absent' needs a `path` key")
     if not (root / str(rel)).exists():
-        return Finding(check=NAME, title=e.says, verdict=Verdict.PASS,
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
                        severity=_sev(e), detail=f"{rel} is absent, as promised")
-    return Finding(check=NAME, title=e.says, verdict=Verdict.FAIL,
+    return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL,
                    severity=_sev(e), detail=f"{rel} exists and must not",
                    evidence=str(root / str(rel)),
-                   remedy=e.config.get("remedy", ""))
+                   remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
 
 
 # Reading a .pyc with errors="ignore" turns compiled bytecode into a string
@@ -261,19 +266,102 @@ def _check_grep(e: Expectation, root: Path) -> Finding:
 
     found = bool(hits)
     if found == must_exist:
-        return Finding(check=NAME, title=e.says, verdict=Verdict.PASS,
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
                        severity=_sev(e),
                        detail=(f"{len(hits)} match(es), as promised" if must_exist
                                else "no matches, as promised"))
     return Finding(
-        check=NAME, title=e.says, verdict=Verdict.FAIL, severity=_sev(e),
+        check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL, severity=_sev(e),
         detail=("expected the pattern to appear and it does not" if must_exist
                 else f"the pattern appears {len(hits)} time(s) and must not"),
         evidence="\n".join(hits[:10]) or f"pattern: {pattern}",
-        remedy=e.config.get("remedy", ""))
+        remedy=e.config.get("remedy", ""),
+                   remedy_he=e.config.get("remedy_he", ""))
+
+
+def _check_schedule_after(e: Expectation, root: Path) -> Finding:
+    """A workflow that CHECKS must run after the workflow that CHANGES.
+
+    THE DEFECT THIS EXISTS FOR, in full, because it is easy to make again:
+    the audit workflow was scheduled at 06:00 UTC "after the daily run". The
+    self-improvement daemon edits and pushes code at 06:40. So the audit
+    inspected the repository forty minutes BEFORE the thing most likely to
+    break it. A pass that broke something at 06:40 went unreported until 06:00
+    the next day — twenty-three hours — and the 04:30 daily run used the broken
+    code first.
+
+    Nothing was misconfigured in a way any linter would see. Both workflows
+    were valid, both ran, both were green. The ORDER was wrong, and order is
+    invisible unless something looks at it.
+
+    Passing means one of two things, and both are real fixes:
+      * the checker is triggered by `workflow_run` on the writer — it follows
+        the daemon rather than guessing at the clock; or
+      * every one of the checker's cron times is later in the day than every
+        one of the writer's.
+    """
+    checker = e.config.get("checker")
+    writer = e.config.get("writer")
+    if not checker or not writer:
+        return _unknown(e, "kind='schedule_after' needs `checker` and `writer` "
+                           "workflow filenames")
+
+    wf = root / ".github" / "workflows"
+    c_path, w_path = wf / str(checker), wf / str(writer)
+    for path in (c_path, w_path):
+        if not path.is_file():
+            return _unknown(e, f"no such workflow: {path.name}",
+                            evidence=str(path))
+
+    c_text = c_path.read_text(encoding="utf-8", errors="ignore")
+    w_text = w_path.read_text(encoding="utf-8", errors="ignore")
+
+    # `workflow_run` is the strong form: it cannot drift out of order, because
+    # it has no clock of its own.
+    w_name = re.search(r"^name:\s*(.+)$", w_text, re.M)
+    w_name = w_name.group(1).strip().strip('"\'') if w_name else ""
+    if "workflow_run" in c_text and (not w_name or w_name in c_text):
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
+                       severity=_sev(e),
+                       detail=f"{checker} is triggered by {writer} finishing, "
+                              f"so it cannot drift out of order")
+
+    def minutes(text: str) -> list[int]:
+        out = []
+        for m in re.finditer(r'cron:\s*["\']?\s*(\S+)\s+(\S+)\s', text):
+            mi, hr = m.group(1), m.group(2)
+            if mi.isdigit() and hr.isdigit():
+                out.append(int(hr) * 60 + int(mi))
+        return out
+
+    c_times, w_times = minutes(c_text), minutes(w_text)
+    if not c_times or not w_times:
+        return _unknown(
+            e, f"could not read a cron time from "
+               f"{checker if not c_times else writer}, and there is no "
+               f"workflow_run link either")
+
+    if min(c_times) > max(w_times):
+        return Finding(check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.PASS,
+                       severity=_sev(e),
+                       detail=f"{checker} runs after {writer} every day")
+
+    def hhmm(t):
+        return f"{t // 60:02d}:{t % 60:02d}"
+    return Finding(
+        check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL, severity=_sev(e),
+        detail=f"{checker} runs at {', '.join(hhmm(t) for t in sorted(c_times))} "
+               f"but {writer} runs at {', '.join(hhmm(t) for t in sorted(w_times))} "
+               f"— so the check happens BEFORE the change it is meant to catch",
+        evidence=f"{checker}: {sorted(hhmm(t) for t in c_times)}\n"
+                 f"{writer}:  {sorted(hhmm(t) for t in w_times)}",
+        remedy_he=e.config.get("remedy_he", ""), remedy=e.config.get("remedy") or
+               f"Trigger {checker} with `workflow_run` on {writer}, or move its "
+               f"cron later than every one of {writer}'s.")
 
 
 _HANDLERS = {
+    "schedule_after": _check_schedule_after,
     "command": _check_command,
     "freshness": _check_freshness,
     "file_exists": _check_file_exists,

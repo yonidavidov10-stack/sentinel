@@ -61,12 +61,39 @@ A scheduler can then treat "it is broken" differently from "I could not look".
 | `command` | a command's exit code and output. `unknown_exit` marks a code meaning *cannot be checked here* |
 | `freshness` | a file was updated recently — by its own embedded timestamp, or its mtime |
 | `file_exists` / `file_absent` | a path is or is not there |
+| `schedule_after` | a workflow that CHECKS runs after the workflow that CHANGES |
 | `grep` | a pattern does or does not appear. `ignore_comments` keeps an expectation from tripping over its own documentation |
 
 An expectation with an **unknown kind is kept, not dropped** — reported
 `UNKNOWN` — because a typo that silently removes a promise from the audit while
 the report stays green is the same trap as a CI step that collects zero tests
 and exits `0`.
+
+### Where new kinds come from
+
+Every kind here started as a defect that nothing would have caught.
+`schedule_after` exists because an audit workflow was scheduled at 06:00 "after
+the daily run", while the self-improvement daemon edited and pushed code at
+06:40 — so the check ran forty minutes *before* the thing most likely to break
+it, and a breakage went unreported for twenty-three hours. Both workflows were
+valid. Both ran. Both were green. Only the **order** was wrong, and order is
+invisible unless something looks at it.
+
+That is the intended loop: when a problem is found by reading rather than by
+running, the fix is not only to correct it but to add the check that would have
+found it. A kind that catches one class of mistake forever is worth more than a
+one-off repair.
+
+## Reporting in another language
+
+An expectation may carry `says_he` beside `says`, and `remedy_he` beside
+`remedy`; findings from the built-in checks carry Hebrew too. The Telegram
+reporter prefers it and **falls back to English rather than to blank** — a
+missing translation must degrade to a readable line, never an empty one.
+
+Explicit fields, not a lookup keyed on the English title: a translation table
+matched by string breaks the moment someone rewords a title, and the report
+reverts to English with nothing to say why.
 
 ## The other checks
 

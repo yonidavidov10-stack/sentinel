@@ -195,3 +195,86 @@ def test_a_crashing_handler_does_not_take_the_audit_down(root, monkeypatch):
     monkeypatch.setitem(intent._HANDLERS, "command", boom)
     r = intent.check(_manifest(root, [exp("command", run="true")]))
     assert any(f.verdict is Verdict.UNKNOWN for f in r.findings)
+
+
+# ── schedule_after: the defect that nothing else would have caught ─────
+def _workflows(root: Path, audit_on: str,
+               improve_cron: str = '- cron: "40 6 * * *"\n    - cron: "40 18 * * *"'):
+    wf = root / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "improve.yml").write_text(
+        f"name: Self-improvement pass\non:\n  schedule:\n    {improve_cron}\n",
+        encoding="utf-8")
+    (wf / "audit.yml").write_text(f"name: audit\non:\n{audit_on}\n",
+                                  encoding="utf-8")
+    return root
+
+
+ORDER = dict(checker="audit.yml", writer="improve.yml")
+
+
+def test_a_checker_scheduled_before_the_writer_fails(root):
+    """The real defect: the audit ran at 06:00 and the daemon edited code at
+    06:40, so the check happened forty minutes before the thing most likely to
+    break it. Both workflows were valid, both ran, both were green. Only the
+    ORDER was wrong, and order is invisible unless something looks at it."""
+    _workflows(root, '  schedule:\n    - cron: "0 6 * * *"')
+    f = intent._check_schedule_after(exp("schedule_after", **ORDER), root)
+    assert f.verdict is Verdict.FAIL
+    assert "06:00" in f.detail and "06:40" in f.detail
+
+
+def test_workflow_run_is_accepted_as_the_strong_fix(root):
+    """It cannot drift out of order, because it has no clock of its own."""
+    _workflows(root, '  workflow_run:\n    workflows: ["Self-improvement pass"]'
+                     '\n    types: [completed]\n  schedule:\n    - cron: "30 7 * * *"')
+    assert intent._check_schedule_after(exp("schedule_after", **ORDER),
+                                        root).verdict is Verdict.PASS
+
+
+def test_a_later_cron_than_every_write_also_passes(root):
+    _workflows(root, '  schedule:\n    - cron: "0 22 * * *"')
+    assert intent._check_schedule_after(exp("schedule_after", **ORDER),
+                                        root).verdict is Verdict.PASS
+
+
+def test_later_than_the_morning_pass_but_earlier_than_the_evening_one_fails(root):
+    """The subtle case: 09:00 beats 06:40 and loses to 18:40, so half the
+    day's changes still go unchecked until tomorrow."""
+    _workflows(root, '  schedule:\n    - cron: "0 9 * * *"')
+    assert intent._check_schedule_after(exp("schedule_after", **ORDER),
+                                        root).verdict is Verdict.FAIL
+
+
+def test_a_missing_workflow_is_unknown_not_a_pass(root):
+    _workflows(root, '  schedule:\n    - cron: "0 22 * * *"')
+    f = intent._check_schedule_after(
+        exp("schedule_after", checker="nope.yml", writer="improve.yml"), root)
+    assert f.verdict is Verdict.UNKNOWN
+
+
+def test_an_unreadable_cron_is_unknown_rather_than_assumed_fine(root):
+    _workflows(root, '  push:\n    branches: [main]')
+    assert intent._check_schedule_after(exp("schedule_after", **ORDER),
+                                        root).verdict is Verdict.UNKNOWN
+
+
+def test_missing_config_is_unknown(root):
+    assert intent._check_schedule_after(exp("schedule_after"),
+                                        root).verdict is Verdict.UNKNOWN
+
+
+# ── Hebrew ─────────────────────────────────────────────────────────────
+def test_a_promise_carries_its_hebrew_into_the_finding(root):
+    e = Expectation(id="x", says="A promise", says_he="הבטחה", kind="command",
+                    severity="high", config={"run": "true"})
+    f = intent._check_command(e, root)
+    assert f.say("title", "he") == "הבטחה"
+    assert f.say("title", "en") == "A promise"
+
+
+def test_a_promise_without_hebrew_falls_back_to_english(root):
+    e = Expectation(id="x", says="A promise", kind="command", severity="high",
+                    config={"run": "true"})
+    f = intent._check_command(e, root)
+    assert f.say("title", "he") == "A promise", "must not degrade to blank"

@@ -36,7 +36,7 @@ def _tests(m: Manifest, findings: list[Finding]) -> None:
     cmd = m.commands.get("tests")
     if not cmd:
         findings.append(Finding(
-            check=NAME, title="The project has an automated test suite",
+            check=NAME, title="The project has an automated test suite", title_he="לפרויקט יש חבילת טסטים אוטומטית",
             verdict=Verdict.WARN, severity=Severity.HIGH,
             detail="no [commands].tests in the manifest, so nothing here can "
                    "run or count them",
@@ -46,7 +46,7 @@ def _tests(m: Manifest, findings: list[Finding]) -> None:
     r = run(str(cmd), m.root, timeout_s=int(m.commands.get("tests_timeout_s", 900)))
     if r.error:
         findings.append(Finding(
-            check=NAME, title="The test suite runs and passes",
+            check=NAME, title="The test suite runs and passes", title_he="חבילת הטסטים רצה ועוברת",
             verdict=Verdict.UNKNOWN, severity=Severity.CRITICAL,
             detail=f"could not run the suite: {r.error}", evidence=r.output,
             remedy=f"Check that `{cmd}` works from the project root."))
@@ -55,14 +55,14 @@ def _tests(m: Manifest, findings: list[Finding]) -> None:
     count = _test_count(r.output)
     if not r.ok:
         findings.append(Finding(
-            check=NAME, title="The test suite runs and passes",
+            check=NAME, title="The test suite runs and passes", title_he="חבילת הטסטים רצה ועוברת",
             verdict=Verdict.FAIL, severity=Severity.CRITICAL,
             detail=f"`{cmd}` exited {r.exit_code}",
             evidence=r.output[-2000:],
             remedy="Fix the failures before anything else in this report."))
     else:
         findings.append(Finding(
-            check=NAME, title="The test suite runs and passes",
+            check=NAME, title="The test suite runs and passes", title_he="חבילת הטסטים רצה ועוברת",
             verdict=Verdict.PASS, severity=Severity.CRITICAL,
             detail=f"{count if count is not None else 'an unknown number of'} "
                    f"tests, all green"))
@@ -73,21 +73,21 @@ def _tests(m: Manifest, findings: list[Finding]) -> None:
     floor = m.commands.get("min_tests")
     if floor is None:
         findings.append(Finding(
-            check=NAME, title="The suite is actually collecting its tests",
+            check=NAME, title="The suite is actually collecting its tests", title_he="החבילה באמת אוספת את הטסטים שלה",
             verdict=Verdict.WARN, severity=Severity.MEDIUM,
             detail="no [commands].min_tests, so a collection that silently "
                    "drops to zero would still report success",
             remedy="Set min_tests to a floor comfortably below the real count."))
     elif count is None:
         findings.append(Finding(
-            check=NAME, title="The suite is actually collecting its tests",
+            check=NAME, title="The suite is actually collecting its tests", title_he="החבילה באמת אוספת את הטסטים שלה",
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="could not find a test count in the output",
             evidence=r.output[-800:],
             remedy="Use a runner that prints 'Ran N tests' or 'N passed'."))
     elif count < int(floor):
         findings.append(Finding(
-            check=NAME, title="The suite is actually collecting its tests",
+            check=NAME, title="The suite is actually collecting its tests", title_he="החבילה באמת אוספת את הטסטים שלה",
             verdict=Verdict.FAIL, severity=Severity.HIGH,
             detail=f"collected {count}, floor is {floor} — collection is broken, "
                    f"and a suite that collects nothing still exits 0",
@@ -96,7 +96,7 @@ def _tests(m: Manifest, findings: list[Finding]) -> None:
                    "than no pipeline."))
     else:
         findings.append(Finding(
-            check=NAME, title="The suite is actually collecting its tests",
+            check=NAME, title="The suite is actually collecting its tests", title_he="החבילה באמת אוספת את הטסטים שלה",
             verdict=Verdict.PASS, severity=Severity.MEDIUM,
             detail=f"collected {count} (floor {floor})"))
 
@@ -107,7 +107,7 @@ def _ci(m: Manifest, findings: list[Finding]) -> None:
         if wf_dir.is_dir() else []
     if not workflows:
         findings.append(Finding(
-            check=NAME, title="CI runs the test suite automatically",
+            check=NAME, title="CI runs the test suite automatically", title_he="ה-CI מריץ את הטסטים אוטומטית",
             verdict=Verdict.WARN, severity=Severity.HIGH,
             detail="no GitHub Actions workflows at all",
             remedy="Add a workflow that runs the suite on every push."))
@@ -118,12 +118,12 @@ def _ci(m: Manifest, findings: list[Finding]) -> None:
                if runner.search(w.read_text(encoding="utf-8", errors="ignore"))]
     if running:
         findings.append(Finding(
-            check=NAME, title="CI runs the test suite automatically",
+            check=NAME, title="CI runs the test suite automatically", title_he="ה-CI מריץ את הטסטים אוטומטית",
             verdict=Verdict.PASS, severity=Severity.HIGH,
             detail=f"{', '.join(running)}"))
     else:
         findings.append(Finding(
-            check=NAME, title="CI runs the test suite automatically",
+            check=NAME, title="CI runs the test suite automatically", title_he="ה-CI מריץ את הטסטים אוטומטית",
             verdict=Verdict.FAIL, severity=Severity.HIGH,
             detail=f"{len(workflows)} workflow(s), none of which runs tests",
             evidence=", ".join(w.name for w in workflows),
@@ -134,7 +134,7 @@ def _ci(m: Manifest, findings: list[Finding]) -> None:
 def _ci_status(m: Manifest, findings: list[Finding]) -> None:
     if not which("gh"):
         findings.append(Finding(
-            check=NAME, title="The latest CI run is green",
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="the `gh` CLI is not installed, so the real run status "
                    "cannot be read",
@@ -145,7 +145,7 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
             m.root, timeout_s=60)
     if r.error or not r.ok or not r.stdout.strip():
         findings.append(Finding(
-            check=NAME, title="The latest CI run is green",
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="could not read run history from GitHub",
             evidence=(r.error or r.output)[:400],
@@ -160,7 +160,7 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
     # judging. UNKNOWN is the honest answer — nobody knows yet.
     if conclusion in ("null", "", "unknown", "None"):
         findings.append(Finding(
-            check=NAME, title="The latest CI run is green",
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="the latest run has not finished, so there is no result yet",
             evidence=r.stdout.strip(),
@@ -169,12 +169,12 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
 
     if conclusion == "success":
         findings.append(Finding(
-            check=NAME, title="The latest CI run is green",
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.PASS, severity=Severity.MEDIUM,
             detail=f"{parts[1] if len(parts) > 1 else 'workflow'} succeeded"))
     else:
         findings.append(Finding(
-            check=NAME, title="The latest CI run is green",
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.FAIL, severity=Severity.HIGH,
             detail=f"latest run concluded '{conclusion or 'unknown'}'",
             evidence=r.stdout.strip(),
@@ -185,7 +185,7 @@ def _git(m: Manifest, findings: list[Finding]) -> None:
     st = run("git status --porcelain", m.root, timeout_s=60)
     if st.error or not st.ok:
         findings.append(Finding(
-            check=NAME, title="Work is committed, not sitting in the tree",
+            check=NAME, title="Work is committed, not sitting in the tree", title_he="העבודה מקובעת, לא יושבת בעץ",
             verdict=Verdict.UNKNOWN, severity=Severity.LOW,
             detail="git status failed", evidence=(st.error or st.output)[:400],
             remedy="Run sentinel inside a git repository."))
@@ -193,21 +193,21 @@ def _git(m: Manifest, findings: list[Finding]) -> None:
     dirty = [l for l in st.stdout.splitlines() if l.strip()]
     if dirty:
         findings.append(Finding(
-            check=NAME, title="Work is committed, not sitting in the tree",
+            check=NAME, title="Work is committed, not sitting in the tree", title_he="העבודה מקובעת, לא יושבת בעץ",
             verdict=Verdict.WARN, severity=Severity.LOW,
             detail=f"{len(dirty)} uncommitted change(s)",
             evidence="\n".join(dirty[:15]),
             remedy="Commit or discard them. Uncommitted work is not backed up."))
     else:
         findings.append(Finding(
-            check=NAME, title="Work is committed, not sitting in the tree",
+            check=NAME, title="Work is committed, not sitting in the tree", title_he="העבודה מקובעת, לא יושבת בעץ",
             verdict=Verdict.PASS, severity=Severity.LOW,
             detail="clean tree"))
 
     ahead = run("git rev-list --count @{u}..HEAD", m.root, timeout_s=60)
     if ahead.error or not ahead.ok:
         findings.append(Finding(
-            check=NAME, title="Committed work is pushed to the remote",
+            check=NAME, title="Committed work is pushed to the remote", title_he="העבודה המקובעת נדחפה לשרת",
             verdict=Verdict.UNKNOWN, severity=Severity.LOW,
             detail="no upstream branch, or git could not compare",
             evidence=(ahead.error or ahead.output)[:300],
@@ -216,13 +216,13 @@ def _git(m: Manifest, findings: list[Finding]) -> None:
     n = int(ahead.stdout.strip() or 0)
     if n:
         findings.append(Finding(
-            check=NAME, title="Committed work is pushed to the remote",
+            check=NAME, title="Committed work is pushed to the remote", title_he="העבודה המקובעת נדחפה לשרת",
             verdict=Verdict.WARN, severity=Severity.LOW,
             detail=f"{n} commit(s) exist only on this machine",
             evidence=ahead.stdout.strip(), remedy="git push"))
     else:
         findings.append(Finding(
-            check=NAME, title="Committed work is pushed to the remote",
+            check=NAME, title="Committed work is pushed to the remote", title_he="העבודה המקובעת נדחפה לשרת",
             verdict=Verdict.PASS, severity=Severity.LOW,
             detail="up to date with the remote"))
 
@@ -251,7 +251,7 @@ def _improvements(m: Manifest, findings: list[Finding]) -> None:
 
     if notes:
         findings.append(Finding(
-            check=NAME, title="Improvement opportunities",
+            check=NAME, title="Improvement opportunities", title_he="הזדמנויות לשיפור",
             verdict=Verdict.WARN, severity=Severity.LOW,
             detail=f"{len(notes)} suggestion(s)",
             evidence="\n".join(f"- {n}" for n in notes),
@@ -259,7 +259,7 @@ def _improvements(m: Manifest, findings: list[Finding]) -> None:
                    "is time."))
     else:
         findings.append(Finding(
-            check=NAME, title="Improvement opportunities",
+            check=NAME, title="Improvement opportunities", title_he="הזדמנויות לשיפור",
             verdict=Verdict.PASS, severity=Severity.LOW,
             detail="nothing obvious"))
 

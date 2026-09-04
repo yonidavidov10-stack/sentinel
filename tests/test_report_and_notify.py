@@ -171,3 +171,30 @@ def test_a_genuinely_failed_ci_run_still_fails(monkeypatch, tmp_path):
     health._ci_status(Manifest(path=tmp_path / "m", name="n", purpose="p"),
                       findings)
     assert findings[0].verdict is Verdict.FAIL
+
+
+def test_the_message_names_the_sender_not_only_the_subject():
+    """The first live message said only "stock-predictor", which reads as a
+    message FROM that project rather than a bug report ABOUT it."""
+    msg = telegram.format_audit(audit(FAIL))
+    assert "בודק הבאגים" in msg
+
+
+def test_the_heartbeat_names_the_sender_too():
+    assert "בודק הבאגים" in telegram.format_heartbeat(audit(PASS), 7)
+
+
+def test_hebrew_titles_are_preferred_when_present():
+    f = Finding(check="intent", title="English", title_he="עברית",
+                verdict=Verdict.FAIL, detail="d", detail_he="פרט",
+                remedy="fix", remedy_he="תקן")
+    msg = telegram.format_audit(audit(f))
+    assert "עברית" in msg and "פרט" in msg and "תקן" in msg
+    assert "English" not in msg
+
+
+def test_an_untranslated_finding_still_reads_in_english():
+    """A missing translation must degrade to a readable line, never a blank
+    one — a finding with no title is a finding nobody can act on."""
+    msg = telegram.format_audit(audit(FAIL))
+    assert "broken" in msg
