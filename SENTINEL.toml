@@ -61,6 +61,45 @@ must_match = false
 ignore_comments = true
 remedy = "Remove it and rotate it. This repository is public."
 
+[[expectations]]
+id = "lessons-are-recorded"
+says = "Every defect found is written down before it is fixed"
+says_he = "כל פגם שנמצא נרשם ביומן הלקחים לפני שהוא מתוקן"
+why = """
+The loop this tool exists to run. A fix repairs one instance; a lesson written
+down is what turns it into a check, and the check is what stops the class.
+
+This only asserts the file EXISTS and has entries. Whether the lessons are good
+ones is not mechanically checkable, and pretending otherwise would be exactly
+the kind of check that passes for the wrong reason.
+"""
+kind = "grep"
+severity = "high"
+pattern = "^## L[0-9]+"
+paths = ["LESSONS.md"]
+must_match = true
+remedy_he = "צור LESSONS.md עם לקח אחד לפחות. פגם שלא נרשם הוא פגם שיחזור."
+
+[[expectations]]
+id = "open-lessons-are-not-forgotten"
+says = "No lesson has been left open for more than eight weeks"
+says_he = "אף לקח לא נשאר פתוח יותר משמונה שבועות"
+why = """
+An open lesson is a defect that can still recur. The weekly improvement pass is
+meant to close them; this notices when it stops.
+
+Eight weeks, not two: some lessons genuinely need a design decision first, and
+a check that fires while someone is still thinking gets muted. The number is
+generous on purpose — it is here to catch abandonment, not delay.
+"""
+kind = "command"
+severity = "medium"
+run = "python3 scripts/check_open_lessons.py"
+expect_exit = 0
+unknown_exit = 3
+unknown_reason = "the lesson checker could not read LESSONS.md"
+remedy_he = "פתח את LESSONS.md, סגור לקח פתוח בבדיקה — או סמן אותו unmechanisable עם הסיבה."
+
 [security]
 # The scanner finds the patterns it is looking for, in the file that lists
 # them. Silenced by naming the marker rather than the whole file: a real

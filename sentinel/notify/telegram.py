@@ -155,7 +155,7 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
     # "stock-predictor", which reads as a message from that project rather than
     # a bug report about it — and once several projects report here, the
     # distinction is the whole point of the line.
-    L = [f"🛠 <b>בודק הבאגים</b> · {_esc(audit.manifest.name)}", ""]
+    L = [f"🛠 <b>Bug Fixer</b>({_esc(audit.manifest.name)})", ""]
     counts = []
     if by_verdict[Verdict.FAIL]:
         counts.append(f"❌ {len(by_verdict[Verdict.FAIL])} נשברו")
@@ -197,7 +197,7 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
 
 def format_heartbeat(audit: Audit, clean_days: int) -> str:
     """The weekly all-clear. Its job is to make a GAP visible."""
-    return (f"🛠 <b>בודק הבאגים</b> · {_esc(audit.manifest.name)}\n\n"
+    return (f"🛠 <b>Bug Fixer</b>({_esc(audit.manifest.name)})\n\n"
             f"✅ נקי — {audit.count(Verdict.PASS)} בדיקות עברו.\n"
             f"{clean_days} ימים רצופים בלי ממצא.\n\n"
             f"<i>ההודעה הזו נשלחת פעם בשבוע כדי שתדע שהבודק חי. "

@@ -177,11 +177,11 @@ def test_the_message_names_the_sender_not_only_the_subject():
     """The first live message said only "stock-predictor", which reads as a
     message FROM that project rather than a bug report ABOUT it."""
     msg = telegram.format_audit(audit(FAIL))
-    assert "בודק הבאגים" in msg
+    assert "Bug Fixer" in msg and "demo" in msg
 
 
 def test_the_heartbeat_names_the_sender_too():
-    assert "בודק הבאגים" in telegram.format_heartbeat(audit(PASS), 7)
+    assert "Bug Fixer" in telegram.format_heartbeat(audit(PASS), 7)
 
 
 def test_hebrew_titles_are_preferred_when_present():

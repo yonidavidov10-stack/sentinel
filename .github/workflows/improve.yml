@@ -87,14 +87,39 @@ jobs:
               allowlist. A pass that can widen its own permissions is not a
               safety boundary.
 
+            READ LESSONS.md FIRST. It is the point of this pass.
+
+            Every entry there is a defect that got past everything already in
+            place. A fix repairs one instance; a CHECK catches the whole class
+            forever, and turning an open lesson into a check is the
+            highest-value work available to you — higher than any refactor,
+            higher than any new feature.
+
+            So: find the entries marked `status: open`, pick the one whose
+            check would catch the widest class of mistake, and build it. Then
+            change its status to `closed` and name the check you added.
+
+            If an open lesson genuinely cannot be checked mechanically — some
+            are wording decisions, not classes of defect — mark it
+            `unmechanisable` WITH THE REASON, rather than inventing a check
+            that passes for the wrong reason. Saying "this cannot be automated"
+            plainly is a real answer and a good one.
+
+            AND ADD TO IT. If this pass finds a defect of its own, write it
+            into LESSONS.md before fixing it, in the same shape as the others:
+            what got past, why nothing caught it, and what check would have. A
+            lesson recorded is worth more than a lesson repaired, because the
+            record is what stops the next one.
+
             Work in priority order and STOP once you would be guessing:
 
             1. RUN THE SUITE (`python -m pytest tests -q`) and the tool against
                itself (`python -m sentinel.cli run .`). Fix what is broken
                before adding anything.
-            2. THE HIGHEST-VALUE WORK IS A NEW EXPECTATION KIND or a sharper
-               check — something a real project needs to state about itself and
-               currently cannot. Prefer that over refactoring.
+            2. CLOSE AN OPEN LESSON. See above — this is the pass's purpose.
+               Failing that, a new expectation kind or a sharper check:
+               something a real project needs to state about itself and
+               currently cannot. Prefer either over refactoring.
             3. FALSE POSITIVES ARE BUGS, and expensive ones: a scanner that
                cries wolf gets muted, and a muted scanner looks like coverage.
                A finding a reader would dismiss is worse than no finding.

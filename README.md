@@ -69,6 +69,34 @@ An expectation with an **unknown kind is kept, not dropped** — reported
 the report stays green is the same trap as a CI step that collects zero tests
 and exits `0`.
 
+## The learning loop
+
+`LESSONS.md` is a ledger of defects that got past everything already in place.
+Each entry records what happened, why nothing caught it, and the check that
+would have.
+
+```
+found a defect  →  write the lesson (status: open)
+                →  weekly pass turns it into a check (status: closed)
+                →  the class of mistake cannot recur unnoticed
+```
+
+**A fix repairs one instance. A check catches the class.** The improvement
+pass reads this file before anything else and its highest-priority work is
+closing an open lesson — higher than any refactor or new feature. Anything it
+finds along the way is written in before it is fixed, because the record is
+what stops the next one.
+
+Two expectations keep the loop honest: the ledger must exist and have entries,
+and no lesson may sit open for more than eight weeks. Eight, not two — some
+lessons need a design decision first, and a reminder that fires while someone
+is still thinking gets muted. The window catches **abandonment**, not delay.
+
+Some defects are wording decisions rather than classes of mistake, and those
+are marked `unmechanisable` **with the reason**. Saying "this cannot be
+automated" plainly is a better answer than a check that passes for the wrong
+reason.
+
 ### Where new kinds come from
 
 Every kind here started as a defect that nothing would have caught.
