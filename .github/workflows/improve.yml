@@ -51,18 +51,20 @@ jobs:
 
       # Recorded BEFORE the pass, so the check afterwards compares against
       # what was really there rather than what the pass says was there.
-      - name: Count the tests before
+      - name: Count the tests and lessons before
         id: before
         run: |
           N=$(python -m pytest tests -q 2>&1 | sed -n 's/^\([0-9][0-9]*\) passed.*/\1/p')
+          L=$(grep -c '^## L[0-9]' LESSONS.md || echo 0)
           echo "count=${N:-0}" >> "$GITHUB_OUTPUT"
-          echo "Before: ${N:-0} tests"
+          echo "lessons=${L:-0}" >> "$GITHUB_OUTPUT"
+          echo "Before: ${N:-0} tests, ${L:-0} lessons"
 
       - name: Run one improvement pass
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git *),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
+          claude_args: --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git add*),Bash(git commit*),Bash(git ls-files*),Bash(git blame*),Bash(git grep*),Bash(git rev-parse*),Bash(git branch*),Bash(git stash list*),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
           prompt: |
             Scheduled self-improvement pass on `sentinel`, a project auditor.
             Read README.md first — it states what the tool is for and the one
@@ -86,6 +88,13 @@ jobs:
             - .github/workflows/** — your own schedule, permissions and tool
               allowlist. A pass that can widen its own permissions is not a
               safety boundary.
+
+            AND THE LEDGER MAY NOT SHRINK. Close a lesson by naming the check
+            that catches it, or mark it `unmechanisable` with the reason —
+            never delete one. Deleting makes the ledger look clean while the
+            defect it recorded can still recur, which is the same shortcut as
+            deleting a test, one level up. The count is asserted after you
+            finish.
 
             READ LESSONS.md FIRST. It is the point of this pass.
 
@@ -154,6 +163,24 @@ jobs:
 
       # THE GUARD. Checked from outside the pass, against a count taken before
       # it, so the pass cannot report its own compliance.
+      # A lesson may be CLOSED, never removed. Deleting one makes the ledger
+      # look clean while the defect it recorded is still able to recur — the
+      # same shortcut as deleting a test, one level up. Closing it means naming
+      # the check that catches it; if it genuinely cannot be automated, the
+      # honest move is `unmechanisable` with the reason, which keeps the entry.
+      - name: The lesson ledger may not shrink
+        run: |
+          AFTER=$(grep -c '^## L[0-9]' LESSONS.md || echo 0)
+          BEFORE=${{ steps.before.outputs.lessons }}
+          echo "Lessons before: $BEFORE   after: $AFTER"
+          if [ "$AFTER" -lt "$BEFORE" ]; then
+            echo "::error::Lessons went from $BEFORE to $AFTER. A lesson is
+            closed by naming the check that catches it, or marked
+            unmechanisable with a reason — never deleted. Reverting."
+            git reset --hard origin/main
+            exit 1
+          fi
+
       - name: The test count may not fall
         run: |
           AFTER=$(python -m pytest tests -q 2>&1 | sed -n 's/^\([0-9][0-9]*\) passed.*/\1/p')
