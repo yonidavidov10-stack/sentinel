@@ -269,10 +269,47 @@ def _improvements(m: Manifest, findings: list[Finding]) -> None:
             detail="nothing obvious"))
 
 
+def _recurring(m: Manifest, findings: list[Finding]) -> None:
+    """What the owner has now been told several times, and is still true.
+
+    The audit that ran an hour ago cannot tell you it is the fourteenth time it
+    said the same thing. This can, and that sequence is the most valuable
+    signal the system produces: a finding repeated for a week is a failure of
+    the SYSTEM — either nobody is acting on it, or it is not really a problem
+    and the report has been crying wolf daily. Both are worth knowing.
+    """
+    from .. import history
+
+    repeats = history.recurring(m.root)
+    if not repeats:
+        findings.append(Finding(
+            check=NAME, title="No finding keeps being reported unresolved",
+            title_he="אין ממצא שחוזר שוב ושוב בלי שנפתר",
+            verdict=Verdict.PASS, severity=Severity.MEDIUM,
+            detail="nothing has been reported five times running",
+            detail_he="שום דבר לא דווח חמש פעמים ברציפות"))
+        return
+
+    lines = [f"{r['title']} — reported {r['count']}x" for r in repeats]
+    findings.append(Finding(
+        check=NAME, title="No finding keeps being reported unresolved",
+        title_he="אין ממצא שחוזר שוב ושוב בלי שנפתר",
+        verdict=Verdict.WARN, severity=Severity.HIGH,
+        detail=f"{len(repeats)} finding(s) reported 5+ times and still open",
+        detail_he=f"{len(repeats)} ממצאים דווחו 5 פעמים או יותר ועדיין פתוחים",
+        evidence="\n".join(lines[:8]),
+        remedy="Either fix them, or decide they are not problems and stop "
+               "reporting them. A finding repeated daily and never acted on "
+               "trains the reader to ignore the whole report.",
+        remedy_he="או לתקן אותם, או להחליט שהם לא בעיה ולהפסיק לדווח עליהם. "
+                  "ממצא שחוזר כל יום ואף אחד לא נוגע בו מלמד את הקורא "
+                  "להתעלם מכל הדוח."))
+
+
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
-        for step in (_tests, _ci, _ci_status, _git, _improvements):
+        for step in (_tests, _ci, _ci_status, _git, _recurring, _improvements):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

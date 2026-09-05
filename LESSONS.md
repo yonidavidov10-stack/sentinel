@@ -119,6 +119,29 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L015 — Findings were sent and nothing read them back
+**Found** 2026-09-05, by the owner asking that messages come back for review ·
+**status: closed**
+
+Each report was a fresh look at the code and nothing looked at the reports. So
+the most valuable signal the system produces was being thrown away: **a finding
+that appears in every message for a week is a failure of the system, not a
+finding.** Either nobody is acting on it, or it is not really a problem and the
+report has been crying wolf daily. Neither is visible from one report — the
+audit that ran an hour ago cannot tell you it is the fourteenth time it said
+the same thing.
+
+Both outcomes are real work, and they point opposite ways: still a problem, fix
+it; not a problem, stop reporting it. A check nobody acts on is worse than no
+check, because it teaches the reader to skim the section where the findings
+that matter live.
+
+**Check:** `.audit-history/` keeps the last sixty messages actually SENT — not
+audits that ran, since a silent audit told the reader nothing — and
+`health._recurring` warns when a FAIL or UNKNOWN has been reported five times
+and is still open. WARNs are excluded: a recurring warning is usually a
+deliberate "not now".
+
 ## L014 — The audit reported, and nothing acted on it
 **Found** 2026-09-05, by the owner asking whether it also fixes ·
 **status: closed**

@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 
 from . import manifest as mf
+from . import history
 from .checks import health, intent, security
 from .report import Audit, to_dict, to_markdown, to_terminal
 
@@ -86,12 +87,19 @@ def _notify(audits: list[Audit], heartbeat: bool) -> None:
         message = telegram.format_audit(audit)
         if message is None:
             if not heartbeat:
+                # Nothing sent means nothing to remember. The history is a
+                # record of what the OWNER was told, not of every audit that
+                # ran — a silent audit told them nothing.
                 continue
             message = telegram.format_heartbeat(audit, clean_days=7)
         result = telegram.send(message, token, chats)
         status = "sent" if result.ok else f"FAILED: {result.detail}"
         print(f"(telegram: {audit.manifest.name} — {status}, "
               f"{result.messages_sent} message(s))", file=sys.stderr)
+        if result.ok:
+            note = history.record(audit, message)
+            if note:
+                print(f"(history: {note})", file=sys.stderr)
 
 
 def main(argv: list[str] | None = None) -> int:
