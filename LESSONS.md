@@ -119,6 +119,49 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L014 — The audit reported, and nothing acted on it
+**Found** 2026-09-05, by the owner asking whether it also fixes ·
+**status: closed**
+
+The audit ran, found real breakage, and sent it to Telegram. The
+self-improvement daemon ran separately and never read any of it. So findings
+went to a chat app and stopped there, while a daemon with the ability to fix
+them spent its pass guessing at what to work on.
+
+Nothing was broken. Two working systems simply had no wire between them, and a
+bot called "Bug Fixer" that only reports is misnamed.
+
+**Check:** none — this is a workflow-wiring decision. `unmechanisable` inside
+the repo, though the wiring itself is now verified: improve.yml generates a
+fresh report and the prompt makes fixing a ❌ the highest-priority work.
+
+## L013 — A scanner that flagged PyTorch's inference switch
+**Found** 2026-09-05, in the first real cloud report · **status: closed**
+
+`\beval\s*\(` matched `model.eval()` and `self.eval()` — PyTorch's
+inference-mode switch, which appears in every torch codebase and has nothing
+to do with Python's builtin. Two false positives in the first report anyone
+actually read. A scanner that cries wolf gets muted, and a muted scanner looks
+like coverage.
+
+**Check:** the pattern is now `(?<![.\w])eval\s*\(` — the builtin is never
+preceded by a dot.
+
+## L012 — A check that did not apply, reported as unchecked
+**Found** 2026-09-05, in the first real cloud report · **status: closed**
+
+"Nothing is scheduled on the owner's Mac" ran in Linux CI, where launchd does
+not exist, and reported UNKNOWN. Technically true and practically corrosive:
+it put a permanent unactionable line in every report, and a reader who learns
+to skim one line skims the section — which is exactly where the real unknowns
+live.
+
+UNKNOWN means "this applies here and I could not check it". SKIP means "this
+does not apply here", which is a decision rather than an omission. Collapsing
+the two costs the report its credibility.
+
+**Check:** the `command` kind now takes `skip_exit` beside `unknown_exit`.
+
 ## L011 — A branch protection that locked out the only maintainer
 **Found** 2026-09-04, one minute after enabling it · **status: closed**
 

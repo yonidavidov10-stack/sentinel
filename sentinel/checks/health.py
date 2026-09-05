@@ -138,7 +138,9 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="the `gh` CLI is not installed, so the real run status "
                    "cannot be read",
-            remedy="Install and authenticate the GitHub CLI."))
+            detail_he="ה-CLI של gh לא מותקן, אז אי אפשר לקרוא את מצב ההרצה",
+            remedy="Install and authenticate the GitHub CLI.",
+            remedy_he="התקן ואמת את ה-CLI של GitHub."))
         return
     r = run("gh run list --limit 1 --json conclusion,workflowName,url "
             "--jq '.[0] | \"\\(.conclusion)|\\(.workflowName)|\\(.url)\"'",
@@ -148,8 +150,11 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
             check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
             detail="could not read run history from GitHub",
+            detail_he="לא הצלחתי לקרוא את היסטוריית ההרצות מ-GitHub",
             evidence=(r.error or r.output)[:400],
-            remedy="Check `gh auth status` and that this repo has a remote."))
+            remedy="Check `gh auth status`, that this repo has a remote, and "
+                   "that GH_TOKEN is available if this is running in CI.",
+            remedy_he="בדוק gh auth status, שיש remote לריפו, ושיש GH_TOKEN אם זה רץ ב-CI."))
         return
     parts = r.stdout.strip().split("|")
     conclusion = parts[0] if parts else ""

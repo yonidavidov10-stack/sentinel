@@ -41,8 +41,12 @@ NEVER_TRACK = [".env", ".env.local", ".env.production", "secrets.toml",
 # Code patterns with a real consequence. Each carries WHY, because a finding
 # whose reason a reader has to guess gets dismissed.
 RISKY_CODE = [
-    (r"\beval\s*\(", "eval() executes whatever reaches it", Severity.HIGH),
-    (r"\bexec\s*\(", "exec() executes whatever reaches it", Severity.HIGH),
+    # `(?<![.\w])` — NOT a method call. `model.eval()` and `self.eval()` are
+    # PyTorch's inference-mode switch and appear in every torch codebase; the
+    # first real audit flagged two of them, which is exactly how a scanner
+    # earns its way into a mute filter. The builtin is never preceded by a dot.
+    (r"(?<![.\w])eval\s*\(", "eval() executes whatever reaches it", Severity.HIGH),
+    (r"(?<![.\w])exec\s*\(", "exec() executes whatever reaches it", Severity.HIGH),
     (r"pickle\.loads?\s*\(", "pickle deserialisation is arbitrary code execution",
      Severity.HIGH),
     (r"verify\s*=\s*False", "TLS verification disabled — the connection is "

@@ -59,6 +59,24 @@ def _check_command(e: Expectation, root: Path) -> Finding:
     # is no launchd at all — so an expectation about "nothing is scheduled on
     # the Mac" would go green in CI while checking nothing. The command signals
     # that itself with a dedicated exit code, and it becomes UNKNOWN.
+    # SKIP vs UNKNOWN, and the difference is real. UNKNOWN means "this applies
+    # here and I could not check it" — actionable, because something is
+    # unverified. SKIP means "this does not apply here at all", which is a
+    # decision, not an omission.
+    #
+    # The launchd check is the case that forced the distinction: it asks
+    # whether anything is scheduled on the owner's Mac, and it runs in Linux
+    # CI where launchd does not exist. Reporting UNKNOWN there put a permanent
+    # unactionable line in every single report — noise that trains a reader to
+    # skim past the section where the real unknowns live.
+    skip_exit = e.config.get("skip_exit")
+    if skip_exit is not None and r.exit_code == int(skip_exit):
+        return Finding(
+            check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.SKIP,
+            severity=_sev(e),
+            detail=e.config.get("skip_reason")
+                   or f"does not apply here (exit {skip_exit})")
+
     unknown_exit = e.config.get("unknown_exit")
     if unknown_exit is not None and r.exit_code == int(unknown_exit):
         return _unknown(
