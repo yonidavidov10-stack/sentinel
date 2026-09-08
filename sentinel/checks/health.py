@@ -14,6 +14,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from .. import history
 from ..manifest import Manifest
 from ..verdict import CheckResult, Finding, Severity, Verdict
 from .base import run, timer, which
@@ -142,8 +143,20 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
             remedy="Install and authenticate the GitHub CLI.",
             remedy_he="התקן ואמת את ה-CLI של GitHub."))
         return
-    r = run("gh run list --limit 1 --json conclusion,workflowName,url "
-            "--jq '.[0] | \"\\(.conclusion)|\\(.workflowName)|\\(.url)\"'",
+    # THE RUN THAT ASKS IS NOT THE RUN TO JUDGE. `--limit 1` returns the most
+    # recent run, which — when this check runs inside CI — is the audit
+    # currently executing. It has no conclusion yet, so the check reported
+    # "has not finished" every single time: a question that could never be
+    # answered, asked twice a day. It was 9 of the first 10 reports, and the
+    # recurring-finding warning is what surfaced it.
+    #
+    # So: ask for FINISHED runs only, and skip anything still in progress.
+    # `--status completed` is the server-side filter; the client-side skip
+    # covers a run that finishes between the two.
+    r = run("gh run list --limit 10 --status completed "
+            "--json conclusion,workflowName,url,status "
+            "--jq '[.[] | select(.status == \"completed\")][0] "
+            "| \"\\(.conclusion)|\\(.workflowName)|\\(.url)\"'",
             m.root, timeout_s=60)
     if r.error or not r.ok or not r.stdout.strip():
         findings.append(Finding(
@@ -278,9 +291,15 @@ def _recurring(m: Manifest, findings: list[Finding]) -> None:
     the SYSTEM — either nobody is acting on it, or it is not really a problem
     and the report has been crying wolf daily. Both are worth knowing.
     """
-    from .. import history
-
     repeats = history.recurring(m.root)
+    # Carry each finding's Hebrew title across, so the warning names them in
+    # the language the report is written in.
+    for r in repeats:
+        for report in history.load(m.root, limit=5):
+            for f in report.get("findings") or []:
+                if (f.get("check"), f.get("title")) == (r["check"], r["title"]):
+                    r["title_he"] = f.get("title_he") or ""
+                    break
     if not repeats:
         findings.append(Finding(
             check=NAME, title="No finding keeps being reported unresolved",
@@ -290,7 +309,13 @@ def _recurring(m: Manifest, findings: list[Finding]) -> None:
             detail_he="שום דבר לא דווח חמש פעמים ברציפות"))
         return
 
-    lines = [f"{r['title']} — reported {r['count']}x" for r in repeats]
+    # NAME THEM. The first live warning said only "1 finding reported 5+ times"
+    # and left the reader to go and look — which is the same defect the warning
+    # exists to catch, one level up: a message that costs work to act on gets
+    # skipped. The Hebrew title is preferred, since that is the report's
+    # language.
+    lines = [f"{r.get('title_he') or r['title']} — דווח {r['count']} פעמים"
+             for r in repeats]
     findings.append(Finding(
         check=NAME, title="No finding keeps being reported unresolved",
         title_he="אין ממצא שחוזר שוב ושוב בלי שנפתר",

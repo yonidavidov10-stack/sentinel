@@ -119,6 +119,27 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L016 — A check that judged the run that was asking
+**Found** 2026-09-08, by the recurring-finding warning it had just been given ·
+**status: closed**
+
+`gh run list --limit 1` returns the most recent run. Inside CI, that IS the
+audit currently executing — it has no conclusion yet, so the CI-status check
+reported "has not finished" every single time. A question that could never be
+answered, asked twice a day.
+
+It appeared in 9 of the first 10 messages and nobody noticed, because one
+UNKNOWN line in one report looks like ordinary weather. Only the sequence made
+it visible — which is precisely what the recurring-finding check was added for,
+and it paid for itself on the first report after it shipped.
+
+It is also invisible from a laptop: run locally, `--limit 1` returns some other
+finished run and the check passes. Only the cloud has the failing shape.
+
+**Check:** the command now asks for `--status completed` and skips anything
+still in progress, with a test asserting the filter is present — since a test
+that merely calls the function passes either way outside CI.
+
 ## L015 — Findings were sent and nothing read them back
 **Found** 2026-09-05, by the owner asking that messages come back for review ·
 **status: closed**

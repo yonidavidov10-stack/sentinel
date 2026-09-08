@@ -198,3 +198,61 @@ def test_an_untranslated_finding_still_reads_in_english():
     one — a finding with no title is a finding nobody can act on."""
     msg = telegram.format_audit(audit(FAIL))
     assert "broken" in msg
+
+
+# ── the run that asks is not the run to judge ──────────────────────────
+def test_the_ci_check_ignores_runs_still_in_progress(monkeypatch, tmp_path):
+    """Found live: `gh run list --limit 1` returns the most recent run, which
+    inside CI is the audit currently executing. It has no conclusion, so the
+    check reported "has not finished" every single time — a question that could
+    never be answered, asked twice a day, 9 of the first 10 reports.
+
+    The fix asks only for finished runs, so the command must carry that filter.
+    """
+    from sentinel.checks import base, health
+    from sentinel.manifest import Manifest
+
+    seen = {}
+
+    def fake_run(cmd, *a, **k):
+        seen["cmd"] = cmd
+        return base.Run(ok=True, exit_code=0,
+                        stdout="success|tests|https://example/1", stderr="")
+
+    monkeypatch.setattr(health, "which", lambda b: True)
+    monkeypatch.setattr(health, "run", fake_run)
+    findings = []
+    health._ci_status(Manifest(path=tmp_path / "m", name="n", purpose="p"),
+                      findings)
+
+    assert "--status completed" in seen["cmd"], \
+        "must ask only for finished runs, or it judges itself"
+    assert "--limit 1 " not in seen["cmd"], \
+        "limit 1 is the run currently asking"
+    assert findings[0].verdict is Verdict.PASS
+
+
+def test_the_recurring_warning_names_what_is_recurring(tmp_path, monkeypatch):
+    """The first live warning said only "1 finding reported 5+ times" and left
+    the reader to go and look — the same defect it exists to catch, one level
+    up: a message that costs work to act on gets skipped."""
+    from sentinel.checks import health
+    from sentinel.manifest import Manifest
+
+    monkeypatch.setattr(
+        health, "history",
+        type("H", (), {
+            "recurring": staticmethod(lambda root: [
+                {"check": "health", "title": "The latest CI run is green",
+                 "verdict": "unknown", "count": 9, "remedy": "r"}]),
+            "load": staticmethod(lambda root, limit=5: [
+                {"findings": [{"check": "health",
+                               "title": "The latest CI run is green",
+                               "title_he": "ההרצה האחרונה של ה-CI ירוקה"}]}]),
+        })(),
+        raising=False)
+    findings = []
+    health._recurring(Manifest(path=tmp_path / "m", name="n", purpose="p"),
+                      findings)
+    assert "ההרצה האחרונה" in findings[0].evidence
+    assert "9" in findings[0].evidence

@@ -158,7 +158,10 @@ def to_dict(audit: Audit) -> dict:
         "findings": [
             {"check": f.check, "title": f.title, "verdict": f.verdict.value,
              "severity": f.severity.value, "detail": f.detail,
-             "evidence": f.evidence, "remedy": f.remedy}
+             "evidence": f.evidence, "remedy": f.remedy,
+             # Stored too, so a later reader — the recurring-finding check, the
+             # daemon — can name a past finding in the report's own language.
+             "title_he": f.title_he, "remedy_he": f.remedy_he}
             for f in audit.findings
         ],
     }
