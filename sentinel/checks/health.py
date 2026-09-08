@@ -331,10 +331,46 @@ def _recurring(m: Manifest, findings: list[Finding]) -> None:
                   "להתעלם מכל הדוח."))
 
 
+def _never_passed(m: Manifest, findings: list[Finding]) -> None:
+    """Checks that have run and never once passed — a symptom of the CHECK.
+
+    Different question from `_recurring`. That one asks "is this still open",
+    and a long-standing real problem answers yes honestly. This asks "has this
+    ever worked at all", and a no points at the check rather than the project.
+    """
+    stuck = history.never_passed(m.root)
+    if not stuck:
+        findings.append(Finding(
+            check=NAME, title="Every check has passed at least once",
+            title_he="כל בדיקה עברה לפחות פעם אחת",
+            verdict=Verdict.PASS, severity=Severity.MEDIUM,
+            detail="no check is permanently stuck",
+            detail_he="אין בדיקה שתקועה לצמיתות"))
+        return
+    findings.append(Finding(
+        check=NAME, title="Every check has passed at least once",
+        title_he="כל בדיקה עברה לפחות פעם אחת",
+        verdict=Verdict.WARN, severity=Severity.HIGH,
+        detail=f"{len(stuck)} check(s) have never passed — suspect the check, "
+               f"not the project",
+        detail_he=f"{len(stuck)} בדיקות מעולם לא עברו — החשד הוא על הבדיקה, "
+                  f"לא על הפרויקט",
+        evidence="\n".join(
+            f"{s.get('title_he') or s['title']} — {s['runs']} הרצות, אפס מעברים"
+            for s in stuck[:6]),
+        remedy="A check that never passes is usually asking a question that "
+               "cannot be answered in the environment it runs in. Check what "
+               "it looks like THERE, not where you are testing it from.",
+        remedy_he="בדיקה שאף פעם לא עוברת בדרך כלל שואלת שאלה שאי אפשר לענות "
+                  "עליה בסביבה שבה היא רצה. בדוק איך היא נראית שם, לא מהמקום "
+                  "שממנו אתה בודק אותה."))
+
+
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
-        for step in (_tests, _ci, _ci_status, _git, _recurring, _improvements):
+        for step in (_tests, _ci, _ci_status, _git, _recurring, _never_passed,
+                     _improvements):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

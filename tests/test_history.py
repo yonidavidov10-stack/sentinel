@@ -127,3 +127,54 @@ def test_the_directory_is_capped(root):
     for _ in range(history.KEEP + 15):
         history.record(a, "m")
     assert len(list(history.directory(root).glob("*.json"))) <= history.KEEP
+
+
+# ── a check that never passes is probably broken, not vigilant ─────────
+def test_a_check_that_never_passed_is_surfaced(root):
+    """The generalised form of a real bug: "is the latest CI run green" asked
+    for the most recent run, which inside CI is the audit currently executing.
+    It reported "not finished" forever — nine reports before anyone noticed,
+    because one UNKNOWN line looks like ordinary weather."""
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00",
+                     [f("stuck check", "unknown"), f("healthy", "pass")])
+    stuck = history.never_passed(root)
+    assert len(stuck) == 1
+    assert stuck[0]["title"] == "stuck check"
+    assert stuck[0]["runs"] == 8
+
+
+def test_a_check_that_passed_once_is_not_flagged(root):
+    """One pass proves the question is answerable. After that, a failure is a
+    finding about the project, not about the check."""
+    for i in range(7):
+        write_report(root, f"2026-09-0{i+1}T00:00:00", [f("flaky", "fail")])
+    write_report(root, "2026-09-08T00:00:00", [f("flaky", "pass")])
+    assert history.never_passed(root) == []
+
+
+def test_a_check_below_the_run_threshold_is_not_flagged(root):
+    """Two unknowns is not a pattern; it is a Tuesday."""
+    for i in range(3):
+        write_report(root, f"2026-09-0{i+1}T00:00:00", [f("new", "unknown")])
+    assert history.never_passed(root) == []
+
+
+def test_skips_do_not_count_as_never_passing(root):
+    """SKIP means deliberately not applicable — a decision, not a failure to
+    answer. Counting it would flag every environment-specific check."""
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00", [f("mac only", "skip")])
+    assert history.never_passed(root) == []
+
+
+def test_never_passed_and_recurring_ask_different_questions(root):
+    """`recurring` asks "is this still open" — a genuine long-standing problem
+    answers yes honestly. `never_passed` asks "has this ever worked", and a no
+    points at the check itself."""
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00",
+                     [f("real problem", "fail")])
+    write_report(root, "2026-09-09T00:00:00", [f("real problem", "pass")])
+    assert history.recurring(root), "still worth reporting as recurring"
+    assert history.never_passed(root) == [], "but it HAS worked, so not stuck"

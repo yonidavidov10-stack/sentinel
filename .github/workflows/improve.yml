@@ -13,9 +13,17 @@ name: Self-improvement pass
 
 on:
   schedule:
-    - cron: "10 7 * * 1"      # Mondays, 07:10 UTC — once a week is enough for
-                              # a tool this size, and a weekly cadence keeps
-                              # each diff small enough to actually read
+    # DAILY, not weekly. Weekly was chosen when this was a small tool nobody
+    # depended on. It is now the thing that audits every other project, which
+    # makes it the address for every bug found IN a check — and those bugs are
+    # invisible to the audited project's own daemon, which cannot reach this
+    # repository at all.
+    #
+    # The cost of the wrong cadence showed up immediately: a check that could
+    # never pass was reported nine times over two days, and the fix had to wait
+    # six days for a Monday. A tool that finds problems everywhere and repairs
+    # itself weekly is the slowest link in its own loop.
+    - cron: "10 7 * * *"
   workflow_dispatch:
 
 concurrency:
@@ -125,6 +133,27 @@ jobs:
             1. RUN THE SUITE (`python -m pytest tests -q`) and the tool against
                itself (`python -m sentinel.cli run .`). Fix what is broken
                before adding anything.
+
+            1b. SUSPECT YOUR OWN CHECKS. You are the only thing that can fix a
+               bug in a check: the projects being audited get this tool as a
+               throwaway checkout they cannot push to, so a broken check is
+               invisible to every daemon but you.
+
+               The shape to hunt for: A CHECK THAT NEVER PASSES IS PROBABLY
+               BROKEN, NOT VIGILANT. One that has reported UNKNOWN or FAIL
+               every time it ran is far more likely to be asking a question
+               that cannot be answered than to have found a problem nobody
+               fixes for weeks.
+
+               That exact bug shipped and ran nine times before anyone noticed:
+               `gh run list --limit 1` returns the most recent run, which
+               INSIDE CI is the audit currently executing — so "is the latest
+               CI run green" reported "not finished yet" forever. It was
+               invisible from a laptop, where --limit 1 returns some other
+               finished run and the check passes.
+
+               So: for each check, ask what it looks like in the environment it
+               actually runs in, not the one you are testing it from.
             2. CLOSE AN OPEN LESSON. See above — this is the pass's purpose.
                Failing that, a new expectation kind or a sharper check:
                something a real project needs to state about itself and

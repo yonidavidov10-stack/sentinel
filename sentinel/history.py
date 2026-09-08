@@ -108,3 +108,41 @@ def recurring(root: Path, min_appearances: int = 5) -> list[dict]:
             entry["first_seen"] = report.get("started_at", entry["first_seen"])
     return sorted((e for e in seen.values() if e["count"] >= min_appearances),
                   key=lambda e: -e["count"])
+
+
+def never_passed(root: Path, min_runs: int = 6) -> list[dict]:
+    """Checks that have run repeatedly and NEVER once passed.
+
+    A CHECK THAT NEVER PASSES IS PROBABLY BROKEN, NOT VIGILANT. One that has
+    reported UNKNOWN or FAIL every time it ran is far more likely to be asking
+    a question that cannot be answered than to have found a problem nobody has
+    fixed in weeks.
+
+    This is the generalised form of a real bug: "is the latest CI run green"
+    asked `gh run list --limit 1`, which inside CI returns the audit currently
+    executing — so it reported "not finished yet" forever. Nine reports before
+    anyone noticed, because one UNKNOWN line looks like ordinary weather.
+
+    Distinct from `recurring`, which asks "is this still open" and would flag a
+    genuine long-standing problem. This asks "has this ever worked", and a no
+    points at the check rather than at the project.
+    """
+    seen: dict[tuple[str, str], dict] = {}
+    for report in load(root):
+        for f in report.get("findings") or []:
+            verdict = f.get("verdict")
+            if verdict == "skip":          # deliberately not applicable
+                continue
+            key = (f.get("check", ""), f.get("title", ""))
+            entry = seen.setdefault(key, {
+                "check": key[0], "title": key[1],
+                "title_he": f.get("title_he", ""), "runs": 0, "passes": 0,
+            })
+            entry["runs"] += 1
+            if verdict == "pass":
+                entry["passes"] += 1
+            if not entry["title_he"]:
+                entry["title_he"] = f.get("title_he", "")
+    return sorted(
+        (e for e in seen.values() if e["passes"] == 0 and e["runs"] >= min_runs),
+        key=lambda e: -e["runs"])

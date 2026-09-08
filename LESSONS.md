@@ -119,6 +119,28 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L017 — A bug found in one project, living in another
+**Found** 2026-09-08, by the owner asking why it did not fix itself ·
+**status: closed**
+
+The audit found a real defect and nothing repaired it. Not because a guard
+blocked the repair — because of geography. The finding surfaced while auditing
+`stock-predictor`, but the bug was in `sentinel`'s own code, and no daemon
+crosses that line: the audited project gets the auditor as a throwaway checkout
+it cannot push to, and the auditor's own pass ran WEEKLY, so the fix would have
+waited six days.
+
+**The auditor is the only thing that can repair a broken check**, which makes
+its cadence the slowest link in the whole loop. Weekly was chosen when this was
+a small tool nobody depended on; it is now the thing every other project's
+health is measured with.
+
+**Check:** the pass is daily now, and `health._never_passed` flags any check
+that has run six times and never once passed — the mechanical form of "suspect
+the check, not the project". Distinct from `_recurring`, which asks whether
+something is still open: a genuine long-standing problem answers that honestly,
+while never having passed at all points at the check.
+
 ## L016 — A check that judged the run that was asking
 **Found** 2026-09-08, by the recurring-finding warning it had just been given ·
 **status: closed**
