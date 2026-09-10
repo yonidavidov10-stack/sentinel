@@ -119,6 +119,31 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L019 — A binary file lost a write to `git pull --rebase`
+**Found** 2026-09-10, by checking the archive instead of trusting the green run ·
+**status: closed**
+
+The first successful market-news run reported everything green. The message
+really was delivered, the runner's own log said "5 archived messages" — and the
+JSON that reached the repository held four, none of them the news.
+
+`git pull --rebase --autostash` cannot merge a binary file. Replaying the
+commit over a remote that had also touched `predictions.db` resolved to one
+side, and the side it picked was the remote's. The write existed on the runner
+and did not survive the push.
+
+The daily report never hit this because nothing competes with it for that file
+at 04:30. The news job runs at 05:00, alongside everything else.
+
+**What made it visible:** the workflow said success at every step. Only reading
+the archive afterwards showed the message was not in it. A green pipeline is
+evidence that the steps exited zero, not that the thing happened.
+
+**Check:** the workflow now pushes first and, on rejection, takes the remote
+database, replays this run's messages into it from a log written at send time,
+and amends. SQLite merges at the row level, which is the only place a merge of
+that file can be correct.
+
 ## L018 — An alarm about a problem that had already been fixed
 **Found** 2026-09-10, in the first message after the fix shipped ·
 **status: closed**
