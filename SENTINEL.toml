@@ -100,6 +100,16 @@ unknown_exit = 3
 unknown_reason = "the lesson checker could not read LESSONS.md"
 remedy_he = "פתח את LESSONS.md, סגור לקח פתוח בבדיקה — או סמן אותו unmechanisable עם הסיבה."
 
+[[expectations]]
+id = "every-schedule-is-explained"
+says = "Every cron line carries the reasoning behind its timing"
+says_he = "לכל שורת cron יש הסבר מעליה למה דווקא בזמן הזה"
+why = "Dogfooding L010. This tool's own cadence was wrong for the same reason: weekly was right when nobody depended on it and wrong once it became the only thing that can repair a broken check."
+kind = "documented"
+severity = "medium"
+pattern = "cron:"
+paths = [".github/workflows"]
+
 [security]
 # The scanner finds the patterns it is looking for, in the file that lists
 # them. Silenced by naming the marker rather than the whole file: a real

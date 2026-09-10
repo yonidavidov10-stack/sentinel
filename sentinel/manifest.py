@@ -36,7 +36,7 @@ MANIFEST_NAME = "SENTINEL.toml"
 # manifest with a hole in it, and `Expectation.known` says so rather than the
 # loader silently discarding the entry.
 KINDS = {"command", "freshness", "file_exists", "file_absent", "grep",
-         "schedule_after"}
+         "schedule_after", "documented"}
 
 SEVERITIES = {"critical", "high", "medium", "low"}
 

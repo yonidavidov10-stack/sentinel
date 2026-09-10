@@ -62,6 +62,7 @@ A scheduler can then treat "it is broken" differently from "I could not look".
 | `freshness` | a file was updated recently — by its own embedded timestamp, or its mtime |
 | `file_exists` / `file_absent` | a path is or is not there |
 | `schedule_after` | a workflow that CHECKS runs after the workflow that CHANGES |
+| `documented` | every line matching a pattern carries a comment explaining it |
 | `grep` | a pattern does or does not appear. `ignore_comments` keeps an expectation from tripping over its own documentation |
 
 An expectation with an **unknown kind is kept, not dropped** — reported

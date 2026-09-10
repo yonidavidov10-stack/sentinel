@@ -278,3 +278,74 @@ def test_a_promise_without_hebrew_falls_back_to_english(root):
                     config={"run": "true"})
     f = intent._check_command(e, root)
     assert f.say("title", "he") == "A promise", "must not degrade to blank"
+
+
+# ── documented: a value nobody understands is a value nobody dares change ──
+def _yaml(root: Path, body: str) -> Path:
+    d = root / ".github" / "workflows"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "x.yml").write_text(body, encoding="utf-8")
+    return root
+
+
+DOC = dict(pattern="cron:", paths=[".github/workflows"])
+
+
+def test_an_unexplained_value_fails(root):
+    """The real defect: `cron: "30 4 * * 2-6"` sat in a workflow with no
+    explanation. The reasoning was sound and nobody could recover it from the
+    file — the owner had to ask."""
+    _yaml(root, 'on:\n  schedule:\n    - cron: "30 4 * * 2-6"\n')
+    f = intent._check_documented(exp("documented", **DOC), root)
+    assert f.verdict is Verdict.FAIL
+    assert "cron" in f.evidence
+
+
+def test_an_explained_value_passes(root):
+    _yaml(root, 'on:\n  # Reports on the previous session, so Tuesday covers'
+                ' Monday.\n  schedule:\n    - cron: "30 4 * * 2-6"\n')
+    assert intent._check_documented(exp("documented", **DOC),
+                                    root).verdict is Verdict.PASS
+
+
+def test_an_empty_comment_is_not_an_explanation(root):
+    _yaml(root, 'on:\n  #\n  schedule:\n    - cron: "0 6 * * *"\n')
+    assert intent._check_documented(exp("documented", **DOC),
+                                    root).verdict is Verdict.FAIL
+
+
+def test_a_comment_too_far_above_does_not_count(root):
+    """Found live: an explanation eight lines up, separated from the line it
+    explains. A reader looking at the line does not see the reason."""
+    _yaml(root, 'on:\n  # explained here\n' + '\n' * 6 +
+                '  schedule:\n    - cron: "0 6 * * *"\n')
+    assert intent._check_documented(exp("documented", **DOC),
+                                    root).verdict is Verdict.FAIL
+
+
+def test_the_lookback_window_is_configurable(root):
+    _yaml(root, 'on:\n  # explained\n' + '\n' * 5 +
+                '  schedule:\n    - cron: "0 6 * * *"\n')
+    e = exp("documented", lookback_lines=12, **DOC)
+    assert intent._check_documented(e, root).verdict is Verdict.PASS
+
+
+def test_a_commented_out_match_is_not_a_hit(root):
+    """`# cron: ...` in a comment is documentation, not a schedule."""
+    _yaml(root, 'on:\n  # cron: "0 6 * * *" was the old one\n'
+                '  # Runs after the daemon.\n  schedule:\n    - cron: "0 9 * * *"\n')
+    assert intent._check_documented(exp("documented", **DOC),
+                                    root).verdict is Verdict.PASS
+
+
+def test_nothing_matching_is_unknown_not_a_pass(root):
+    """An expectation watching something that no longer exists is a manifest
+    that has drifted from the code, not a codebase that is well documented."""
+    _yaml(root, "on:\n  push:\n    branches: [main]\n")
+    assert intent._check_documented(exp("documented", **DOC),
+                                    root).verdict is Verdict.UNKNOWN
+
+
+def test_missing_pattern_is_unknown(root):
+    assert intent._check_documented(exp("documented"),
+                                    root).verdict is Verdict.UNKNOWN

@@ -378,8 +378,87 @@ def _check_schedule_after(e: Expectation, root: Path) -> Finding:
                f"cron later than every one of {writer}'s.")
 
 
+def _check_documented(e: Expectation, root: Path) -> Finding:
+    """Every line matching `pattern` must have a comment near it.
+
+    THE DEFECT THIS EXISTS FOR: `cron: "30 4 * * 2-6"` sat in a workflow with
+    no explanation. The reasoning was sound — the run reports on the previous
+    US trading session, so Sunday and Monday have nothing to report — but
+    nobody could recover it from the file, and A SCHEDULE NOBODY UNDERSTANDS IS
+    A SCHEDULE NOBODY DARES CHANGE. The owner had to ask.
+
+    It generalises past cron: a magic threshold, a `# type: ignore`, a retry
+    count, a sleep. Anything whose VALUE is arbitrary and whose REASON is not
+    recoverable from the code around it.
+
+    "Near it" means the few lines above, which is where a reason is written in
+    every language this is likely to run against.
+    """
+    pattern = e.config.get("pattern")
+    if not pattern:
+        return _unknown(e, "kind='documented' needs a `pattern` key")
+    paths = e.config.get("paths") or ["."]
+    lookback = int(e.config.get("lookback_lines", 4))
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        try:
+            rx = re.compile(str(pattern))
+        except re.error as ex:
+            return _unknown(e, f"pattern is not a valid regex: {ex}")
+    if caught:
+        return _unknown(e, f"the regex compiles but Python warns about it: "
+                           f"{caught[0].message}")
+
+    undocumented: list[str] = []
+    checked = 0
+    for rel in paths:
+        target = root / str(rel)
+        files = ([target] if target.is_file()
+                 else sorted(p for p in target.rglob("*") if _scannable(p)))
+        for f in files[:500]:
+            try:
+                lines = f.read_text(encoding="utf-8",
+                                    errors="ignore").splitlines()
+            except OSError:
+                continue
+            for i, line in enumerate(lines):
+                if line.strip().startswith(_COMMENT_START):
+                    continue          # a comment about the pattern is not a hit
+                if not rx.search(line):
+                    continue
+                checked += 1
+                window = lines[max(0, i - lookback):i]
+                if not any(w.strip().startswith(_COMMENT_START)
+                           and len(w.strip()) > 3 for w in window):
+                    undocumented.append(
+                        f"{f.relative_to(root)}:{i + 1}: {line.strip()[:90]}")
+
+    if not checked:
+        # Nothing matched at all. Not a pass: the expectation is watching
+        # something that is not there, which is a manifest that has drifted
+        # from the code rather than a codebase that is well documented.
+        return _unknown(
+            e, f"nothing matched {pattern!r} in {paths} — this expectation is "
+               f"watching something that no longer exists")
+    if undocumented:
+        return Finding(
+            check=NAME, title=e.says, title_he=e.says_he, verdict=Verdict.FAIL,
+            severity=_sev(e),
+            detail=f"{len(undocumented)} of {checked} have no comment above them",
+            evidence="\n".join(undocumented[:10]),
+            remedy=e.config.get("remedy") or
+                   "Write the reason above the line. A value nobody understands "
+                   "is a value nobody dares change.",
+            remedy_he=e.config.get("remedy_he", ""))
+    return Finding(check=NAME, title=e.says, title_he=e.says_he,
+                   verdict=Verdict.PASS, severity=_sev(e),
+                   detail=f"all {checked} are explained")
+
+
 _HANDLERS = {
     "schedule_after": _check_schedule_after,
+    "documented": _check_documented,
     "command": _check_command,
     "freshness": _check_freshness,
     "file_exists": _check_file_exists,

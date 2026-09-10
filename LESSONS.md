@@ -276,12 +276,18 @@ nothing in a checkout can see them. `unmechanisable` from inside the repo; it
 would need an API call, and that is a real candidate for a future kind.
 
 ## L010 — An undocumented schedule
-**Found** 2026-09-04, by the owner asking why · **status: open**
+**Found** 2026-09-04, by the owner asking why · **status: closed**
 
 `cron: "30 4 * * 2-6"` had no explanation. The reasoning is sound — the run
 reports on the previous US trading session, so Sunday and Monday have nothing
 to report — but nobody could recover it from the file, and a schedule nobody
 understands is a schedule nobody dares change.
 
-**Candidate check:** every `cron:` line in a workflow has a comment within the
-few lines above it. Mechanical, cheap, and it would have caught this.
+**Check:** the `documented` kind — every line matching a pattern must carry a
+comment within the few lines above it. It generalises past cron to any value
+whose reason is not recoverable from the code around it: a magic threshold, a
+`# type: ignore`, a retry count.
+
+Closing it found a second instance immediately: `audit.yml`'s floor cron had a
+long explanation eight lines up, separated from the line it explained. A reader
+looking at the line did not see the reason, which is the whole point.
