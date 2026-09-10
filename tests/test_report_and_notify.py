@@ -242,7 +242,7 @@ def test_the_recurring_warning_names_what_is_recurring(tmp_path, monkeypatch):
     monkeypatch.setattr(
         health, "history",
         type("H", (), {
-            "recurring": staticmethod(lambda root: [
+            "recurring": staticmethod(lambda root, **kw: [
                 {"check": "health", "title": "The latest CI run is green",
                  "verdict": "unknown", "count": 9, "remedy": "r"}]),
             "load": staticmethod(lambda root, limit=5: [
@@ -256,3 +256,25 @@ def test_the_recurring_warning_names_what_is_recurring(tmp_path, monkeypatch):
                       findings)
     assert "ההרצה האחרונה" in findings[0].evidence
     assert "9" in findings[0].evidence
+
+
+def test_a_high_severity_warning_carries_its_list():
+    """The recurring-finding warning said "1 finding reported 5+ times" and
+    withheld WHICH — the exact defect it exists to catch, one level up. A
+    warning that names a list is not a code dump; it is the finding itself."""
+    from sentinel.verdict import Severity
+    w = Finding(check="health", title="recurring", title_he="ממצא חוזר",
+                verdict=Verdict.WARN, severity=Severity.HIGH,
+                detail="1 finding", detail_he="ממצא אחד",
+                evidence="ההרצה האחרונה של ה-CI ירוקה — דווח 9 פעמים")
+    msg = telegram.format_audit(audit(w))
+    assert "ההרצה האחרונה" in msg
+
+
+def test_a_low_severity_warning_stays_quiet():
+    """An untidy .gitignore does not need its file list in the message."""
+    from sentinel.verdict import Severity
+    w = Finding(check="security", title="tidy", verdict=Verdict.WARN,
+                severity=Severity.LOW, detail="d",
+                evidence="a.py\nb.py\nc.py")
+    assert "a.py" not in telegram.format_audit(audit(w))

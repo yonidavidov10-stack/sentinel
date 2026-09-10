@@ -178,3 +178,29 @@ def test_never_passed_and_recurring_ask_different_questions(root):
     write_report(root, "2026-09-09T00:00:00", [f("real problem", "pass")])
     assert history.recurring(root), "still worth reporting as recurring"
     assert history.never_passed(root) == [], "but it HAS worked, so not stuck"
+
+
+def test_a_fixed_finding_stops_being_warned_about(root):
+    """A finding fixed yesterday would otherwise keep being counted from the
+    history for another month — an alarm about a problem that no longer exists,
+    which is exactly the noise this warning was added to prevent."""
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00", [f("was broken")])
+    assert history.recurring(root), "raw history still counts it"
+    assert history.recurring(root, still_open=set()) == [], \
+        "but it is not open now, so it must not be warned about"
+
+
+def test_a_still_open_finding_is_warned_about(root):
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00", [f("still broken")])
+    open_now = {("intent", "still broken")}
+    assert len(history.recurring(root, still_open=open_now)) == 1
+
+
+def test_only_the_open_ones_survive_the_filter(root):
+    for i in range(8):
+        write_report(root, f"2026-09-0{i+1}T00:00:00",
+                     [f("fixed"), f("still broken")])
+    got = history.recurring(root, still_open={("intent", "still broken")})
+    assert [g["title"] for g in got] == ["still broken"]

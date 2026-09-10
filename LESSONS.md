@@ -119,6 +119,35 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L018 — An alarm about a problem that had already been fixed
+**Found** 2026-09-10, in the first message after the fix shipped ·
+**status: closed**
+
+`recurring` counted every appearance in the stored history and never asked
+whether the finding was still open. So the CI-status bug — fixed two days
+earlier — kept being warned about, and would have gone on for another month
+until it aged out of the sixty-report window.
+
+An alarm about a problem that no longer exists is precisely the noise this
+warning was added to prevent, so it had become the thing it was built to catch.
+
+**Check:** `recurring(still_open=...)` takes the set of findings the CURRENT
+audit reports and keeps only those. The raw historical count is still available
+for the ledger, which wants the real number.
+
+## L017b — A warning that withheld its own content
+**Found** 2026-09-10, same message · **status: closed**
+
+The Telegram formatter attached evidence to FAIL only, so a warning could not
+carry a list. Sound as a default — a warning arriving with a code dump is how a
+report becomes a wall of text — and wrong for this one: the recurring-finding
+warning said "1 finding reported 5+ times" and withheld WHICH, leaving the
+reader to go and look. That is the same defect it exists to catch, one level
+up: a message that costs work to act on gets skipped.
+
+**Check:** evidence now rides along for FAIL and for HIGH-severity warnings. A
+warning that names a list is not a code dump; it is the finding itself.
+
 ## L017 — A bug found in one project, living in another
 **Found** 2026-09-08, by the owner asking why it did not fix itself ·
 **status: closed**

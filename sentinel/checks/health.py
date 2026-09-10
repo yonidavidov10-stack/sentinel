@@ -291,7 +291,11 @@ def _recurring(m: Manifest, findings: list[Finding]) -> None:
     the SYSTEM — either nobody is acting on it, or it is not really a problem
     and the report has been crying wolf daily. Both are worth knowing.
     """
-    repeats = history.recurring(m.root)
+    # Only what THIS audit still reports. A finding fixed yesterday would
+    # otherwise keep being warned about for another month, from history alone.
+    open_now = {(f.check, f.title) for f in findings
+                if f.verdict in (Verdict.FAIL, Verdict.UNKNOWN)}
+    repeats = history.recurring(m.root, still_open=open_now)
     # Carry each finding's Hebrew title across, so the warning names them in
     # the language the report is written in.
     for r in repeats:
@@ -369,6 +373,8 @@ def _never_passed(m: Manifest, findings: list[Finding]) -> None:
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
+        # _recurring reads `findings` as it goes, so every check whose result
+        # it filters against must already have run. Order is load-bearing here.
         for step in (_tests, _ci, _ci_status, _git, _recurring, _never_passed,
                      _improvements):
             try:

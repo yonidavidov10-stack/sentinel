@@ -81,8 +81,16 @@ def load(root: Path, limit: int = KEEP) -> list[dict]:
     return out
 
 
-def recurring(root: Path, min_appearances: int = 5) -> list[dict]:
-    """Findings the owner has now been told about `min_appearances` times.
+def recurring(root: Path, min_appearances: int = 5,
+              still_open: set[tuple[str, str]] | None = None) -> list[dict]:
+    """Findings reported `min_appearances` times AND STILL OPEN RIGHT NOW.
+
+    `still_open` is the set of (check, title) that the CURRENT audit reports as
+    fail or unknown. Without it, a finding fixed yesterday keeps being counted
+    from the history and warned about for another month, until it ages out of
+    the window — an alarm about a problem that no longer exists, which is
+    precisely the noise this warning was added to prevent. Passing None keeps
+    the raw historical count, which is what the tests and the ledger want.
 
     Keyed on (check, title) rather than on the detail text, because the detail
     carries counts and timestamps that change between runs while the finding
@@ -106,8 +114,10 @@ def recurring(root: Path, min_appearances: int = 5) -> list[dict]:
             entry["count"] += 1
             # `load` returns newest first, so each later hit is older.
             entry["first_seen"] = report.get("started_at", entry["first_seen"])
-    return sorted((e for e in seen.values() if e["count"] >= min_appearances),
-                  key=lambda e: -e["count"])
+    out = [e for e in seen.values() if e["count"] >= min_appearances]
+    if still_open is not None:
+        out = [e for e in out if (e["check"], e["title"]) in still_open]
+    return sorted(out, key=lambda e: -e["count"])
 
 
 def never_passed(root: Path, min_runs: int = 6) -> list[dict]:

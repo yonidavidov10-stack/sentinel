@@ -180,11 +180,19 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
             detail = f.say("detail", "he")
             if detail:
                 L.append(f"  {_esc(detail)}")
-            # Evidence rides along only for genuine breakage. A warning with a
-            # code dump attached is how a useful report becomes a wall of text.
-            if verdict is Verdict.FAIL and f.evidence:
-                snippet = "\n".join(f.evidence.strip().splitlines()[:4])
-                L.append(f"  <code>{_esc(snippet[:300])}</code>")
+            # Evidence rides along for breakage, and for warnings whose whole
+            # content IS the list.
+            #
+            # The rule was FAIL-only, to stop a warning arriving with a code
+            # dump attached. Sound in general and wrong here: the recurring-
+            # finding warning said "1 finding reported 5+ times" and withheld
+            # WHICH — the exact defect it exists to catch, one level up, since
+            # a message that costs work to act on gets skipped. A warning that
+            # names a list is not a code dump; it is the finding itself.
+            if f.evidence and (verdict is Verdict.FAIL
+                               or Severity(f.severity).rank <= Severity.HIGH.rank):
+                snippet = "\n".join(f.evidence.strip().splitlines()[:5])
+                L.append(f"  <code>{_esc(snippet[:400])}</code>")
             remedy = f.say("remedy", "he")
             if remedy:
                 L.append(f"  ↳ {_esc(remedy)}")
