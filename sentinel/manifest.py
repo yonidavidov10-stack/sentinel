@@ -27,6 +27,7 @@ as a CI step that collects zero tests and exits 0.
 from __future__ import annotations
 
 import tomllib
+import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -39,6 +40,43 @@ KINDS = {"command", "freshness", "file_exists", "file_absent", "grep",
          "schedule_after", "documented"}
 
 SEVERITIES = {"critical", "high", "medium", "low"}
+
+# Keys every kind accepts, then the ones each kind accepts on top.
+#
+# WHY THIS LIST EXISTS, AND WHY A TYPO HERE IS NOT A SMALL MISTAKE
+# ----------------------------------------------------------------
+# An expectation was written with `path = "..."` and `expect = "absent"`. The
+# grep handler reads `paths` and `must_match`. Both keys were therefore
+# ignored, and the check ran with its DEFAULTS: search the entire repository,
+# and require at least one match. It found matches — in the manifest's own
+# explanatory prose — and reported PASS.
+#
+# So the promise was green, the thing it was written to forbid was present,
+# and removing the offending line made no difference to the result. A check
+# that cannot fail is worse than no check: it occupies the space where a real
+# one would have gone, and it reports success to whoever reads the summary.
+#
+# A key this loader does not recognise is now a hole in the manifest, reported
+# UNKNOWN like any other unverified promise, because that is what it is.
+COMMON_CONFIG_KEYS = {"remedy", "remedy_he"}
+
+# WRITTEN FROM THE HANDLERS, NOT FROM MEMORY. The first version of this table
+# was typed out from what the keys sounded like, and invented two that do not
+# exist while missing the two the command handler actually reads — which would
+# have reported four working expectations as broken, the same mistake in the
+# opposite direction. `test_config_keys_matches_what_the_handlers_read` now
+# derives the truth from the source and fails if these drift apart.
+CONFIG_KEYS = {
+    "command": {"run", "timeout_s", "expect_exit", "expect_stdout_contains",
+                "expect_stdout_absent", "unknown_exit", "unknown_reason",
+                "skip_exit", "skip_reason"},
+    "freshness": {"path", "field", "max_age_hours"},
+    "file_exists": {"path"},
+    "file_absent": {"path"},
+    "grep": {"pattern", "paths", "must_match", "ignore_comments"},
+    "schedule_after": {"checker", "writer"},
+    "documented": {"pattern", "paths", "lookback_lines"},
+}
 
 
 @dataclass
@@ -53,10 +91,14 @@ class Expectation:
     # Optional Hebrew rendering of the promise, for reports sent in Hebrew.
     # A project writes `says_he` beside `says`; nothing else changes.
     says_he: str = ""
+    # Keys the loader did not recognise. Non-empty means this expectation is
+    # NOT checkable as written: whatever those keys were meant to configure,
+    # the handler never saw them and ran on its defaults instead.
+    unknown_keys: list[str] = field(default_factory=list)
 
     @property
     def known(self) -> bool:
-        return self.kind in KINDS
+        return self.kind in KINDS and not self.unknown_keys
 
 
 @dataclass
@@ -141,10 +183,27 @@ def load(project_root: Path) -> Manifest:
         config = {k: v for k, v in item.items()
                   if k not in ("id", "says", "says_he", "kind", "why",
                                "severity")}
+
+        # A key the handler will never read means the check is not doing what
+        # the manifest says it does — it is running on defaults. Name the keys
+        # and, if it helps, the nearest one that IS real.
+        allowed = CONFIG_KEYS.get(kind, set()) | COMMON_CONFIG_KEYS
+        unknown_keys = sorted(k for k in config if k not in allowed) if kind in KINDS else []
+        if unknown_keys:
+            hints = []
+            for k in unknown_keys:
+                near = difflib.get_close_matches(k, sorted(allowed), n=1, cutoff=0.6)
+                hints.append(f"{k!r}" + (f" (did you mean {near[0]!r}?)" if near else ""))
+            errors.append(
+                f"{where}: kind={kind!r} does not take {', '.join(hints)} — "
+                f"the check would run on its defaults and could pass without "
+                f"testing anything, so it is reported UNKNOWN instead")
+
         expectations.append(Expectation(
             id=eid, says=says, kind=kind, why=str(item.get("why", "")),
             severity=severity, config=config,
-            says_he=str(item.get("says_he", ""))))
+            says_he=str(item.get("says_he", "")),
+            unknown_keys=unknown_keys))
 
     return Manifest(
         path=path,

@@ -489,6 +489,19 @@ def check(m: Manifest) -> CheckResult:
 
     with timer() as t:
         for e in m.expectations:
+            # Keys the loader did not recognise mean the handler never saw
+            # them. Running it anyway produces a result about its DEFAULTS,
+            # dressed up as a result about this promise — which is how a check
+            # written to forbid something passed while the thing was there.
+            if e.unknown_keys:
+                findings.append(_unknown(
+                    e,
+                    f"the manifest sets {', '.join(repr(k) for k in e.unknown_keys)}, "
+                    f"which kind={e.kind!r} does not read. The check would run "
+                    f"on its defaults instead of on what was written.",
+                    evidence=f"{m.path.name}: {e.id}"))
+                continue
+
             handler = _HANDLERS.get(e.kind)
             if handler is None:
                 findings.append(_unknown(

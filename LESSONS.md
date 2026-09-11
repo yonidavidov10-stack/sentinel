@@ -119,6 +119,65 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L023 — A key the handler never reads
+**Found** 2026-09-11, while writing the check for L022 · **status: closed**
+
+The new expectation was written `path = "..."` / `expect = "absent"`. The grep
+handler reads `paths` and `must_match`. Both keys landed in `config` and were
+never looked at, so the check ran on its DEFAULTS — search the whole
+repository, require at least one match — found one in the manifest's own
+explanatory prose, and reported PASS.
+
+Deleting the line it existed to forbid changed nothing. It could not fail.
+That is worse than an absent check: it occupies the place a real one would
+have taken, and tells whoever reads the summary that the promise holds.
+
+**Check:** the loader now rejects a key its handler does not read, and reports
+that expectation UNKNOWN with the nearest real key named.
+
+And the first version of THAT table was typed from memory: it invented
+`expect_output` and `forbid_output` and missed `expect_stdout_contains` and
+`expect_stdout_absent`, which the command handler genuinely reads — four
+working expectations would have been condemned as typos. The same mistake,
+pointing the other way. `test_config_keys_matches_what_the_handlers_read`
+parses the handlers and fails if the table drifts from them.
+
+## L022 — A warning left the run green, and two messages were lost
+**Found** 2026-09-11, chasing one CI failure and finding another · **status: closed**
+
+The market summary of 2026-09-10 was delivered and read. All three pushes were
+refused. The step printed `::warning::Could not push the archived message.`,
+exited 0, and GitHub marked the run SUCCESS. No alert fired, because as far as
+Actions could see nothing had failed. The same thing happened on 09-11, where
+an unrelated error happened to turn the run red.
+
+Two mornings the owner read a message the site shows as silence. The archive
+held zero market-news rows — not one, ever — while every surrounding check was
+green: the workflow existed, it ran, its schedule was documented, the reports
+file was fresh. Every PART worked. Nobody asked the whole question.
+
+Three things were wrong, and only the first is about git:
+
+1. The credential restore was missing (see [[L020]]).
+2. **The step reported success after failing at its job.** A warning is for
+   something that did not matter. Losing a delivered message is not that.
+   Archiving is not a nicety attached to sending — it is half the job, and if
+   it did not happen the job did not succeed.
+3. **What was sent existed in exactly one place, and that place was the
+   runner.** There was no way to recover it afterwards, and there still isn't
+   for those two days: the text is gone.
+
+**Check:** `nothing-sent-is-missing-from-the-archive` reads the run history,
+finds every run whose SEND step succeeded, and fails if any of those days has
+no row. It asks about the promise rather than about a part of it — a run that
+died before sending is exempt, because its silence is honest.
+`a-lost-archive-write-fails-loudly` forbids the pattern that hid this.
+
+A run that cannot push now uploads what it sent as an artifact, and the next
+run replays it. The two lost days carry a row saying a message was sent and
+its text was not preserved — an archive honest about a hole beats one that
+looks complete.
+
 ## L021 — A new repository does not inherit the GitHub App
 **Found** 2026-09-11, in this repo's first daily pass · **status: closed**
 
@@ -148,8 +207,11 @@ Both were solved in improve.yml. Writing market-news.yml I made both again —
 so the news message was delivered and then the archive write was thrown away by
 "Authentication failed", at the very last step of a run that had worked.
 
-**A mistake that recurs across files is one to check, not to remember.** Two
-expectations now walk every workflow using the action.
+**A mistake that recurs across files is one to check, not to remember.**
+
+**Check:** `every-claude-workflow-can-mint-oidc` and
+`claude-workflows-restore-git-credentials` walk every workflow using the
+action, in stock-predictor's manifest.
 
 The first version of the credential check PASSED WITH THE STEP REMOVED: its
 regex looked for `run:` and a git verb on one line, and shell blocks are
