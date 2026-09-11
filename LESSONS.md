@@ -119,6 +119,44 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L021 — A new repository does not inherit the GitHub App
+**Found** 2026-09-11, in this repo's first daily pass · **status: closed**
+
+The pass failed with `401 Unauthorized — Claude Code is not installed on this
+repository`. The subscription token was valid and irrelevant: the App grant is
+PER REPOSITORY, and publishing a new one does not carry it over.
+
+The same failure had been solved once already on stock-predictor, weeks
+earlier. The knowledge did not travel, because nothing carried it.
+
+**Check:** `claude-github-app-has-access` reads the last improvement run and
+fails if it died on that exact error. The first attempt queried the
+installations API instead — which needs the App's own JWT, not a user token,
+and returned 401 for a repository where the App plainly works. A check that
+reports failure on a healthy state is worse than no check, and only comparing
+it against a KNOWN-GOOD repo caught it.
+
+## L020 — The same workflow mistake, three times
+**Found** 2026-09-11, in the first scheduled news run · **status: closed**
+
+claude-code-action needs two things that are easy to forget and fail late:
+`id-token: write` to mint an OIDC token, and a credential restore afterwards,
+because the action revokes its own app token and leaves every later git step
+unauthenticated.
+
+Both were solved in improve.yml. Writing market-news.yml I made both again —
+so the news message was delivered and then the archive write was thrown away by
+"Authentication failed", at the very last step of a run that had worked.
+
+**A mistake that recurs across files is one to check, not to remember.** Two
+expectations now walk every workflow using the action.
+
+The first version of the credential check PASSED WITH THE STEP REMOVED: its
+regex looked for `run:` and a git verb on one line, and shell blocks are
+written `run: |` with the commands indented beneath. It matched nothing and
+reported success. Only testing the failing case found it — which is the only
+way that class of bug is ever found.
+
 ## L019 — A binary file lost a write to `git pull --rebase`
 **Found** 2026-09-10, by checking the archive instead of trusting the green run ·
 **status: closed**

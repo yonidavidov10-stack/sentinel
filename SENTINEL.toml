@@ -110,6 +110,39 @@ severity = "medium"
 pattern = "cron:"
 paths = [".github/workflows"]
 
+[[expectations]]
+id = "claude-github-app-has-access"
+says = "The Claude Code GitHub App can reach this repository"
+says_he = "לאפליקציית Claude Code יש גישה לריפו הזה"
+why = """
+A self-improvement pass fails with "401 Unauthorized — Claude Code is not
+installed on this repository" if the App has not been granted access to it.
+The subscription token is valid and irrelevant: the App grant is per
+repository, and a NEW repository does not inherit it.
+
+It cost a full pass on this repo's first daily run, and the same failure had
+already been solved once on stock-predictor weeks earlier — the knowledge did
+not travel because nothing carried it.
+
+Checked from the API rather than the workflow, because the failure happens at
+runtime and leaves nothing in the repository to inspect.
+"""
+# Checked from the RUN HISTORY, not from the installations API — that endpoint
+# needs the App's own JWT, not a user token, and returns 401 for a repository
+# where the App plainly works. A check that reports failure on a healthy state
+# is worse than no check.
+#
+# So: look at whether the most recent improvement run failed on this specific
+# error. The signal is exact and needs no special credential.
+kind = "command"
+severity = "high"
+run = "command -v gh >/dev/null 2>&1 || exit 3; ID=$(gh run list --workflow=improve.yml --limit 1 --status completed --json databaseId,conclusion --jq '.[0] | select(.conclusion==\"failure\") | .databaseId' 2>/dev/null); [ -z \"$ID\" ] && { echo ok; exit 0; }; gh run view \"$ID\" --log-failed 2>/dev/null | grep -q 'not installed on this repository' && { echo 'App has no access to this repo'; exit 1; }; echo ok"
+expect_exit = 0
+expect_stdout_contains = ["ok"]
+unknown_exit = 3
+unknown_reason = "אין gh בסביבה הזו, אז אי אפשר לשאול את GitHub"
+remedy_he = "התקן/הענק גישה ב-https://github.com/apps/claude — צריך לאשר את הריפו הזה בנפרד, גישה לריפו אחד לא עוברת לריפו חדש."
+
 [security]
 # The scanner finds the patterns it is looking for, in the file that lists
 # them. Silenced by naming the marker rather than the whole file: a real
