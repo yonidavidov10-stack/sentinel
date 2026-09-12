@@ -370,13 +370,204 @@ def _never_passed(m: Manifest, findings: list[Finding]) -> None:
                   "שממנו אתה בודק אותה."))
 
 
+# Secrets GitHub provides on its own; a workflow naming these has nothing to
+# configure.
+_BUILTIN_SECRETS = {"GITHUB_TOKEN"}
+
+_SECRET_REF = re.compile(r"secrets\.([A-Z_][A-Z0-9_]*)")
+
+# What a run says when a credential a workflow asked for turned out to be
+# empty. Checked only when the secret list itself cannot be read.
+_MISSING_CREDENTIAL_SIGNS = (
+    "Environment variable validation failed",
+    "is required when using direct Anthropic API",
+    "not installed on this repository",
+)
+
+
+def _secrets(m: Manifest, findings: list[Finding]) -> None:
+    """Does every secret the workflows ask for actually exist here?
+
+    A NEW REPOSITORY INHERITS NOTHING, and this is the second half of that
+    lesson. sentinel's own improvement pass failed for three days on a missing
+    GitHub App grant; the grant was given, and the very next run failed again
+    because the repository had no secrets at all — the token the workflow reads
+    lived in the other project, and secrets are per-repository too.
+
+    The second failure was invisible while the first one stood. That is the
+    shape worth naming: fixing one layer reveals the next, and a check that
+    reads configuration rather than waiting for a run finds both at once.
+
+    Secrets are write-only through the API, so nothing here ever sees a value —
+    only whether a name is present.
+    """
+    title = "Every secret the workflows ask for exists in this repository"
+    title_he = "כל סוד שהתהליכים מבקשים קיים בריפו הזה"
+
+    wf_dir = m.root / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return                      # no workflows, nothing to configure
+
+    wanted: dict[str, list[str]] = {}
+    for wf in sorted(wf_dir.glob("*.y*ml")):
+        for name in _SECRET_REF.findall(wf.read_text(encoding="utf-8",
+                                                     errors="ignore")):
+            if name not in _BUILTIN_SECRETS:
+                wanted.setdefault(name, []).append(wf.name)
+    if not wanted:
+        return
+
+    if not which("gh"):
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail=f"{len(wanted)} secret(s) are referenced, and without the "
+                   f"`gh` CLI there is no way to see whether they are set",
+            detail_he=f"{len(wanted)} סודות נדרשים, ובלי ה-CLI של gh אין דרך "
+                      f"לראות אם הם מוגדרים",
+            evidence=", ".join(sorted(wanted)),
+            remedy="Install and authenticate the GitHub CLI.",
+            remedy_he="התקן ואמת את ה-CLI של GitHub."))
+        return
+
+    r = run("gh secret list --json name --jq '.[].name'", m.root, timeout_s=60)
+    if r.ok and r.stdout.strip():
+        have = set(r.stdout.split())
+    elif r.ok:
+        have = set()                # authenticated, and the list is empty
+    else:
+        # Listing secrets needs admin on the repository, which the token
+        # inside CI does not have. Fall back to what a run can still show:
+        # whether the latest completed run died complaining about one.
+        _secrets_from_run_history(m, findings, wanted, title, title_he,
+                                  r.output)
+        return
+
+    # A secret the project has DECLARED optional is a different thing from one
+    # it forgot. stock-predictor reads two newsletters over IMAP and works
+    # without them by falling back to the public RSS feed — it says so in the
+    # prompt. Reporting that as a high-severity failure every day would be the
+    # false positive this tool is least able to afford: a scanner that cries
+    # wolf gets muted, and a muted scanner looks like coverage.
+    #
+    # So the declaration is honoured, and the cost is still printed. PASS with
+    # what is degraded named in the detail, rather than a warning nobody can
+    # close or a silence that hides it.
+    optional = {str(n) for n in (m.security.get("optional_secrets") or [])}
+    missing = sorted(n for n in wanted if n not in have)
+    absent_optional = sorted(n for n in missing if n in optional)
+    missing = [n for n in missing if n not in optional]
+
+    if not missing:
+        detail = f"all {len(wanted) - len(absent_optional)} required "
+        detail += "secret(s) are set"
+        detail_he = f"כל {len(wanted) - len(absent_optional)} הסודות הנדרשים מוגדרים"
+        if absent_optional:
+            detail += (f"; {len(absent_optional)} declared optional and unset, "
+                       f"so whatever they feed is running degraded: "
+                       + ", ".join(absent_optional))
+            detail_he += (f"; {len(absent_optional)} מוצהרים כאופציונליים "
+                          f"ואינם מוגדרים, אז מה שהם מזינים פועל חלקית: "
+                          + ", ".join(absent_optional))
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH, detail=detail, detail_he=detail_he))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.HIGH,
+        detail=f"{len(missing)} secret(s) a workflow reads are not set here",
+        detail_he=f"{len(missing)} סודות שתהליך קורא אינם מוגדרים כאן",
+        evidence="\n".join(f"{n} — read by {', '.join(sorted(set(wanted[n])))}"
+                           for n in missing),
+        remedy="Set each one with `gh secret set <NAME>`. Secrets do not "
+               "travel between repositories, and a workflow reading one that "
+               "is unset fails at the step that needs it, not at startup.",
+        remedy_he="הגדר כל אחד עם gh secret set <שם>. סודות לא עוברים בין "
+                  "ריפואים, ותהליך שקורא סוד שאינו מוגדר נכשל בשלב שצריך "
+                  "אותו ולא בהתחלה."))
+
+
+def _secrets_from_run_history(m: Manifest, findings: list[Finding],
+                              wanted: dict[str, list[str]], title: str,
+                              title_he: str, why_not: str) -> None:
+    """Second best: did the last completed run complain about a credential?
+
+    Reactive rather than preventive — it needs a failure to have happened —
+    but it is what remains when the secret list is unreadable, which is the
+    case inside CI where this check usually runs.
+    """
+    r = run("gh run list --limit 1 --status completed "
+            "--json databaseId,conclusion "
+            "--jq '.[0] | select(.conclusion == \"failure\") | .databaseId'",
+            m.root, timeout_s=60)
+    if r.ok and not r.stdout.strip():
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="the secret list needs repository admin, which this token "
+                   "does not have; the latest run did not fail, so nothing "
+                   "contradicts the secrets being set — which is not the same "
+                   "as having checked them",
+            detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן הזה; ההרצה "
+                      "האחרונה לא נכשלה, אז שום דבר לא סותר שהסודות מוגדרים — "
+                      "וזה לא אותו דבר כמו לבדוק אותם",
+            evidence=why_not[:300],
+            remedy="Run the audit from a machine whose `gh` is authenticated "
+                   "as the repository owner to check this properly.",
+            remedy_he="הרץ את הביקורת ממכונה שה-gh שלה מאומת כבעל הריפו."))
+        return
+    if not r.ok or not r.stdout.strip():
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail="could not read the secret list or the run history",
+            detail_he="לא הצלחתי לקרוא את רשימת הסודות ולא את היסטוריית ההרצות",
+            evidence=why_not[:300],
+            remedy="Check `gh auth status` and that this repo has a remote.",
+            remedy_he="בדוק gh auth status ושיש remote לריפו."))
+        return
+
+    run_id = r.stdout.strip().splitlines()[0]
+    log = run(f"gh run view {run_id} --log-failed", m.root, timeout_s=120)
+    hit = next((s for s in _MISSING_CREDENTIAL_SIGNS if s in log.output), None)
+    if hit:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.HIGH,
+            detail="the latest run failed complaining that a credential it "
+                   "needed was not available",
+            detail_he="ההרצה האחרונה נכשלה בטענה שסוד שהיא צריכה אינו זמין",
+            evidence=f"run {run_id}: {hit}\nreferenced: "
+                     + ", ".join(sorted(wanted)),
+            remedy="Set the secret with `gh secret set <NAME>`. Secrets and "
+                   "app grants are both per-repository — a new repo inherits "
+                   "neither.",
+            remedy_he="הגדר את הסוד עם gh secret set <שם>. גם סודות וגם "
+                      "הרשאות אפליקציה הם לכל ריפו בנפרד — ריפו חדש לא יורש "
+                      "אף אחד מהם."))
+        return
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he,
+        verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+        detail="the secret list needs repository admin, which this token does "
+               "not have, and the latest failure was about something else",
+        detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן הזה, והכשל "
+                  "האחרון היה על משהו אחר",
+        evidence=why_not[:300],
+        remedy="Run the audit from a machine whose `gh` is authenticated as "
+               "the repository owner to check this properly.",
+        remedy_he="הרץ את הביקורת ממכונה שה-gh שלה מאומת כבעל הריפו."))
+
+
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
-        for step in (_tests, _ci, _ci_status, _git, _recurring, _never_passed,
-                     _improvements):
+        for step in (_tests, _ci, _ci_status, _secrets, _git, _recurring,
+                     _never_passed, _improvements):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

@@ -119,6 +119,41 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L025 — A new repository inherits nothing, and the second miss hid behind the first
+**Found** 2026-09-12, the moment the App grant was fixed · **status: closed**
+
+[[L021]] recorded that a new repository does not inherit the GitHub App grant.
+The grant was given. The very next run failed again:
+
+    Environment variable validation failed:
+      Either ANTHROPIC_API_KEY, CLAUDE_CODE_OAUTH_TOKEN ... is required
+
+The repository had **no secrets at all**. The token its workflow reads lived in
+the other project, and secrets are per-repository exactly like the App grant.
+Three days of runs had reported only the 401, because the credential check
+comes after the token exchange and never got that far.
+
+So L021 was half a lesson. THE CLASS IS NOT "the App grant" — it is EVERY
+PIECE OF PER-REPOSITORY CONFIGURATION A NEW REPO STARTS WITHOUT, and a fix at
+one layer reveals the next rather than finishing the job.
+
+**Check:** `_secrets` in the health checks, so every audited project gets it.
+It walks the workflows for `secrets.NAME` and asks whether each one exists —
+reading configuration instead of waiting for a run, which finds every layer at
+once. Inside CI, where listing secrets needs repository admin the Actions token
+does not have, it falls back to reading the latest failed run for a
+missing-credential complaint, and reports UNKNOWN when neither is available.
+"The last run did not fail" is not "the secrets are set".
+
+And the first version of it FAILED AT HIGH SEVERITY ON A HEALTHY PROJECT.
+stock-predictor reads two newsletters over IMAP and deliberately works without
+them, falling back to the public feed — it says so in its own prompt. Reporting
+that as broken every day is the false positive this tool can least afford: a
+scanner that cries wolf gets muted, and a muted scanner looks like coverage.
+`optional_secrets` in the manifest now declares such a secret, and the check
+passes while still printing what is running degraded. A declared choice is not
+a defect; hiding it entirely would be the other mistake.
+
 ## L024 — Every scheduled run was four hours late, and nothing measured it
 **Found** 2026-09-12, checking whether yesterday's fix had held · **status: closed**
 
