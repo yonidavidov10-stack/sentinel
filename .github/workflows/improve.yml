@@ -72,7 +72,16 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-          claude_args: --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git add*),Bash(git commit*),Bash(git ls-files*),Bash(git blame*),Bash(git grep*),Bash(git rev-parse*),Bash(git branch*),Bash(git stash list*),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
+          # SONNET, DECLARED. What the pass was already getting by default.
+          #
+          # An undeclared model is an undeclared dependency, and this pass
+          # edits the auditor every other project trusts. If the account
+          # default moved, the thing writing new checks would change with no
+          # record of it.
+          #
+          # Deliberately not raised to Opus: that is a spending decision for
+          # the owner, not a side effect of declaring what already runs.
+          claude_args: --model sonnet --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git add*),Bash(git commit*),Bash(git ls-files*),Bash(git blame*),Bash(git grep*),Bash(git rev-parse*),Bash(git branch*),Bash(git stash list*),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
           prompt: |
             Scheduled self-improvement pass on `sentinel`, a project auditor.
             Read README.md first — it states what the tool is for and the one

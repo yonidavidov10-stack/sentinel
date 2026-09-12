@@ -119,6 +119,58 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L026 — An undeclared model is an undeclared dependency
+**Found** 2026-09-12, auditing where a strong model was being spent needlessly · **status: closed**
+
+The question was where Opus was being used for work that did not need it. The
+answer was nowhere: all three cloud workflows — both self-improvement passes
+and the market summary — were already running Sonnet 5. Read from the run
+logs, not from the configuration, because the configuration said nothing.
+
+THAT SILENCE WAS THE FINDING. Not one workflow declared a model, so each was
+getting whatever the account default happened to be that morning. The daily
+message a person reads, and the pass that edits two repositories, both
+depended on a value written down nowhere. If the default moves, the output
+moves with it and no diff records why — the same shape as [[L024]], where a
+schedule was documented as a time that never happened.
+
+`--model sonnet` is now explicit in all three. It changes nothing today, which
+is the point: it makes today's behaviour the thing that has to be changed on
+purpose.
+
+Deliberately NOT raised to Opus, though the improvement passes are the
+strongest candidates for it. Raising spend is the owner's decision, not a side
+effect of tidying up declarations.
+
+The real waste was outside the workflows entirely: `~/.claude/settings.json`
+pinned `"model": "opus"`, which every interactive session inherits AND passes
+down to every subagent it spawns. A subagent sweeping files for a pattern does
+not need Opus, and nobody chose it there — it was inherited invisibly.
+`CLAUDE_CODE_SUBAGENT_MODEL: sonnet` fixes that without touching the
+interactive choice, which is deliberate.
+
+**Check:** `_claude_action` in the health checks — every workflow using the
+action must declare a model. It reports FAIL naming the workflow, and says
+nothing at all for a project that does not use the action, because three
+permanent passes about an unused tool is noise.
+
+**And the check moved house.** Two sibling checks for this action lived in
+stock-predictor's manifest, written after each mistake was made there. sentinel
+runs the same action, in a workflow written later, and was covered by NEITHER —
+the project whose job is catching repeated mistakes was repeating them
+unguarded. All three now live in the health checks, where every audited project
+gets them, and the manifest copies were deleted rather than left to report
+everything twice.
+
+**Footnote, and not a small one.** The script that deleted those two
+expectations cut to the end of the file and took the whole `[security]` table
+with it, including the allow-list that stops the credential scanner flagging
+documentation which quotes a token shape. No test noticed — the tests do not
+read the manifest. The AUDIT noticed, immediately, because the secrets check
+went from PASS to FAIL in the same run. A tool that compares declared
+configuration against reality catches a class of regression a test suite
+structurally cannot.
+
 ## L025 — A new repository inherits nothing, and the second miss hid behind the first
 **Found** 2026-09-12, the moment the App grant was fixed · **status: closed**
 
@@ -293,9 +345,15 @@ so the news message was delivered and then the archive write was thrown away by
 
 **A mistake that recurs across files is one to check, not to remember.**
 
-**Check:** `every-claude-workflow-can-mint-oidc` and
-`claude-workflows-restore-git-credentials` walk every workflow using the
-action, in stock-predictor's manifest.
+**Check:** `_claude_action` in sentinel's health checks walks every workflow
+using the action and asks for both — plus a declared model, added 2026-09-12.
+
+These began as expectations in stock-predictor's manifest and MOVED HERE, for
+the reason this lesson states: sentinel runs the same action, in a workflow
+written later, and was covered by neither. A check that only guards the
+project it was born in leaves every other project free to repeat the mistake.
+Recurring across projects is this same lesson one level up, and the answer is
+the same — the check belongs where every project gets it.
 
 The first version of the credential check PASSED WITH THE STEP REMOVED: its
 regex looked for `run:` and a git verb on one line, and shell blocks are

@@ -561,13 +561,108 @@ def _secrets_from_run_history(m: Manifest, findings: list[Finding],
         remedy_he="הרץ את הביקורת ממכונה שה-gh שלה מאומת כבעל הריפו."))
 
 
+# ── claude-code-action: three ways to get it wrong ─────────────────────
+#
+# WHY THESE LIVE HERE AND NOT IN A MANIFEST. They started as expectations in
+# stock-predictor's SENTINEL.toml, written after each mistake was made there.
+# sentinel runs the same action, in a workflow written later, and was covered
+# by NONE of them — so the project whose job is catching repeated mistakes was
+# the one repeating them unguarded.
+#
+# L020 says a mistake that recurs across files is one to check rather than
+# remember. Recurring across PROJECTS is the same lesson one level up, and the
+# answer is the same: the check moves to where every project gets it.
+
+_ACTION = "claude-code-action"
+_GIT_WRITE = re.compile(r"^\s*git (add|commit|push)\b", re.M)
+
+
+def _claude_action(m: Manifest, findings: list[Finding]) -> None:
+    wf_dir = m.root / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return
+    users = []
+    for wf in sorted(wf_dir.glob("*.y*ml")):
+        text = wf.read_text(encoding="utf-8", errors="ignore")
+        if _ACTION in text:
+            users.append((wf.name, text))
+    if not users:
+        return
+
+    # 1. OIDC. The action authenticates with a GitHub OIDC token, so a job that
+    #    cannot mint one fails BEFORE Claude starts — after installing every
+    #    dependency, with an error naming OIDC and nothing about what is
+    #    missing. Made twice: improve.yml, then market-news.yml.
+    no_oidc = [name for name, text in users
+               if not re.search(r"^\s*id-token:\s*write", text, re.M)]
+    findings.append(_action_finding(
+        no_oidc, "Every workflow using claude-code-action grants id-token: write",
+        "כל תהליך שמשתמש ב-claude-code-action מעניק id-token: write",
+        len(users),
+        "Add `id-token: write` to that workflow's `permissions:` block.",
+        "הוסף id-token: write לבלוק ה-permissions של התהליך."))
+
+    # 2. CREDENTIALS. The action revokes its own app token when it finishes, so
+    #    every later git step fails with "Authentication failed" — after the
+    #    work is done, throwing away a finished run's output at the last
+    #    moment. Made three times. It only matters if the workflow writes with
+    #    git afterwards, so that is the condition.
+    no_restore = [name for name, text in users
+                  if _GIT_WRITE.search(text)
+                  and "Restore git credentials" not in text]
+    findings.append(_action_finding(
+        no_restore,
+        "Every workflow running claude-code-action then using git restores its credentials",
+        "כל תהליך שמריץ את claude-code-action ואז משתמש ב-git משחזר את האישורים",
+        len(users),
+        "Add a step after the action that resets origin's URL with "
+        "x-access-token and secrets.GITHUB_TOKEN, and give it `if: always()` "
+        "so a failed pass still commits what it had.",
+        "הוסף שלב אחרי הפעולה שמאפס את כתובת origin עם x-access-token "
+        "ו-secrets.GITHUB_TOKEN, עם if: always()."))
+
+    # 3. THE MODEL. Nothing failed here — which is the point. An undeclared
+    #    model means whatever the account default happens to be does the work,
+    #    so a change of default silently changes what writes a daily message or
+    #    edits this repository, with no diff recording it.
+    no_model = [name for name, text in users if "--model" not in text]
+    findings.append(_action_finding(
+        no_model, "Every claude-code-action step declares which model runs it",
+        "כל שלב של claude-code-action מצהיר איזה מודל מריץ אותו",
+        len(users),
+        "Add `--model <name>` to that step's `claude_args`. An undeclared "
+        "model is an undeclared dependency: it works until the default moves, "
+        "and then the output changes for no reason anyone can find.",
+        "הוסף --model <שם> ל-claude_args של השלב. מודל לא מוצהר הוא תלות לא "
+        "מוצהרת — הוא עובד עד שברירת המחדל זזה, ואז הפלט משתנה בלי סיבה "
+        "שאפשר לאתר.",
+        severity=Severity.MEDIUM))
+
+
+def _action_finding(offenders, title, title_he, total, remedy, remedy_he,
+                    severity=Severity.HIGH) -> Finding:
+    if not offenders:
+        return Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=severity,
+            detail=f"all {total} workflow(s) using the action",
+            detail_he=f"כל {total} התהליכים שמשתמשים בפעולה")
+    return Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=severity,
+        detail=f"{len(offenders)} of {total} workflow(s) using the action do not",
+        detail_he=f"{len(offenders)} מתוך {total} תהליכים לא",
+        evidence="\n".join(offenders),
+        remedy=remedy, remedy_he=remedy_he)
+
+
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
-        for step in (_tests, _ci, _ci_status, _secrets, _git, _recurring,
-                     _never_passed, _improvements):
+        for step in (_tests, _ci, _ci_status, _secrets, _claude_action, _git,
+                     _recurring, _never_passed, _improvements):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

@@ -235,3 +235,132 @@ def test_the_app_grant_error_is_recognised_too(tmp_path, monkeypatch):
     findings = []
     health._secrets(_project(tmp_path, WORKFLOW), findings)
     assert findings[0].verdict is Verdict.FAIL
+
+
+# ── claude-code-action: the three mistakes, and the failing case of each ──
+#
+# These began as expectations in stock-predictor's manifest, each written after
+# the mistake was made there. sentinel runs the same action in a workflow
+# written later and was covered by none of them — the project whose job is
+# catching repeated mistakes, repeating them unguarded.
+#
+# Every case below is tested in BOTH directions. A check verified only on the
+# state it wants is a check that has never been shown to fail, and this file
+# already contains one lesson about that.
+
+GOOD = """
+permissions:
+  contents: write
+  id-token: write
+jobs:
+  j:
+    steps:
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_args: --model sonnet --allowedTools "Read"
+      - name: Restore git credentials for the steps below
+        run: git remote set-url origin ...
+      - name: Keep it
+        run: |
+          git add data
+          git commit -q -m x
+          git push -q origin main
+"""
+
+
+def _findings(tmp_path, text, name="w.yml"):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / name).write_text(text, encoding="utf-8")
+    out = []
+    health._claude_action(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    return {f.title: f for f in out}
+
+
+def _verdict(fs, needle):
+    for title, f in fs.items():
+        if needle in title:
+            return f
+    raise AssertionError(f"no finding matching {needle!r} in {list(fs)}")
+
+
+def test_a_correct_workflow_passes_all_three(tmp_path):
+    fs = _findings(tmp_path, GOOD)
+    assert len(fs) == 3
+    for f in fs.values():
+        assert f.verdict is Verdict.PASS, f.title
+
+
+def test_missing_oidc_fails_and_names_the_file(tmp_path):
+    fs = _findings(tmp_path, GOOD.replace("  id-token: write\n", ""),
+                   name="broken.yml")
+    f = _verdict(fs, "id-token")
+    assert f.verdict is Verdict.FAIL
+    assert "broken.yml" in f.evidence
+
+
+def test_missing_credential_restore_fails(tmp_path):
+    fs = _findings(
+        tmp_path,
+        GOOD.replace("      - name: Restore git credentials for the steps below\n"
+                     "        run: git remote set-url origin ...\n", ""))
+    assert _verdict(fs, "restores its credentials").verdict is Verdict.FAIL
+
+
+def test_a_workflow_that_never_writes_with_git_needs_no_restore(tmp_path):
+    """The condition matters. Demanding a credential restore from a workflow
+    that only reads would be a false positive with a confusing remedy."""
+    text = GOOD.replace(
+        "      - name: Restore git credentials for the steps below\n"
+        "        run: git remote set-url origin ...\n", "")
+    text = text.replace("          git add data\n", "") \
+               .replace("          git commit -q -m x\n", "") \
+               .replace("          git push -q origin main\n", "          echo done\n")
+    assert _verdict(_findings(tmp_path, text),
+                    "restores its credentials").verdict is Verdict.PASS
+
+
+def test_git_verbs_are_found_inside_a_run_block(tmp_path):
+    """The bug this regex was born from: the first version looked for `run:`
+    and a git verb on ONE line, and shell blocks are written `run: |` with the
+    commands indented beneath. It matched nothing and passed while checking
+    nothing."""
+    assert health._GIT_WRITE.search("        run: |\n          git push -q origin main\n")
+    assert not health._GIT_WRITE.search("        # git push happens later\n")
+
+
+def test_an_undeclared_model_fails(tmp_path):
+    fs = _findings(tmp_path, GOOD.replace("--model sonnet ", ""))
+    f = _verdict(fs, "declares which model")
+    assert f.verdict is Verdict.FAIL
+    assert "undeclared dependency" in f.remedy
+
+
+def test_the_model_check_does_not_care_which_model(tmp_path):
+    """It is about the declaration, not the choice. Which model is right is the
+    owner's call; leaving it unstated is what makes the output undebuggable."""
+    for name in ("opus", "haiku", "claude-sonnet-5"):
+        fs = _findings(tmp_path, GOOD.replace("sonnet", name))
+        assert _verdict(fs, "declares which model").verdict is Verdict.PASS
+
+
+def test_a_project_that_does_not_use_the_action_is_silent(tmp_path):
+    """Three permanent passes about a tool a project never touches is noise,
+    and noise trains a reader to skim the section real findings live in."""
+    assert _findings(tmp_path, "jobs:\n  j:\n    steps: []\n") == {}
+
+
+def test_only_the_offending_workflow_is_named(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "fine.yml").write_text(GOOD, encoding="utf-8")
+    (wf / "bad.yml").write_text(GOOD.replace("--model sonnet ", ""),
+                                encoding="utf-8")
+    out = []
+    health._claude_action(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    f = _verdict({x.title: x for x in out}, "declares which model")
+    assert f.verdict is Verdict.FAIL
+    assert "bad.yml" in f.evidence and "fine.yml" not in f.evidence
+    assert "1 of 2" in f.detail
