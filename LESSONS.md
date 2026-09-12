@@ -119,6 +119,41 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L024 — Every scheduled run was four hours late, and nothing measured it
+**Found** 2026-09-12, checking whether yesterday's fix had held · **status: closed**
+
+`market-news.yml` said `05:00 UTC = 08:00 Israel in summer`. It has never once
+run at 05:00. GitHub creates these runs three-and-a-half to five hours after
+the cron time — `created_at` equals `run_started_at`, so the lag is in their
+scheduler, not in waiting for a runner. The morning market summary arrives
+around noon; the daily report, nominally 07:30 Israel, arrives at 11:58.
+
+`daily.yml` even estimated the effect in a comment: "GitHub may delay cron by
+15-30 min under load; nothing here is time-critical." Wrong by an order of
+magnitude, and that second clause is why nobody looked again for two weeks.
+
+Every check was blind to this BY CONSTRUCTION, and that is the part worth
+keeping. The freshness checks ask whether a file was written in the last 96
+hours — four hours late passes without a murmur. `schedule_after` compares
+cron LINES, so it reasons about times that never occur. The workflows ran,
+succeeded, produced fresh output and documented their schedules. Every part
+worked. Nothing measured the distance between the promise and the event.
+
+It also explains a failure already written up: the two workflows were given a
+thirty-minute gap and now start fourteen minutes apart, both pushing to main.
+[[L022]] treated the rejected pushes as a credentials problem. They were also
+a collision the clock was supposed to prevent.
+
+**Check:** `schedules-run-close-to-their-cron` measures the real lag per
+workflow against a budget calibrated just above today's worst — so it reports
+the one thing still actionable, whether the drift GOT WORSE. And
+`the-daily-report-arrives-in-the-morning` asks the reader's question instead
+of the cron's: did it arrive before 10:00 local?
+
+The budget being calibrated to reality rather than to zero is deliberate. A
+check pinned to the cron would fail every morning, say nothing new on any of
+them, and teach its reader to skim the line it lives on.
+
 ## L023 — A key the handler never reads
 **Found** 2026-09-11, while writing the check for L022 · **status: closed**
 
