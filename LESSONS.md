@@ -154,6 +154,20 @@ The budget being calibrated to reality rather than to zero is deliberate. A
 check pinned to the cron would fail every morning, say nothing new on any of
 them, and teach its reader to skim the line it lives on.
 
+**Decided 2026-09-12:** the late arrival is accepted rather than compensated
+for, so the checked promise is the DOCUMENTED hour and not the cron. Chasing a
+lag we do not control would mean re-guessing the offset every time GitHub's
+load pattern moves. The cron and the comment now move together or not at all —
+one changing without the other is exactly how the original claim became
+fiction.
+
+And a third check, from the same measurement:
+`the-two-pushing-workflows-do-not-collide`. **A CRON GAP IS AN INTENTION, NOT
+AN OUTCOME.** daily.yml moved to 03:30 UTC to restore real spacing; the check
+takes its verdict from the TIGHTEST day rather than the median, because one
+collision loses one message and averaging it against three quiet days is how a
+real failure becomes a comfortable number.
+
 ## L023 — A key the handler never reads
 **Found** 2026-09-11, while writing the check for L022 · **status: closed**
 
