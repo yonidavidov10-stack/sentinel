@@ -667,6 +667,50 @@ def _dependencies_are_pinned(m: Manifest, findings: list[Finding]) -> None:
         else:
             unconstrained.append(line)
 
+    # A HASH-LOCKED FILE IS A STRONGER ANSWER THAN A PINNED ONE, and the check
+    # must be able to see the difference or there is no reason to do the harder
+    # thing. A pin trusts the index to serve the same artifact under a known
+    # version, and says nothing about the transitive tree — six pinned names
+    # here resolve to 220 packages.
+    lock = next((m.root / n for n in ("requirements.lock", "requirements.txt.lock")
+                 if (m.root / n).is_file()), None)
+    if lock is not None and "--hash=" in lock.read_text(encoding="utf-8",
+                                                        errors="ignore"):
+        wf = m.root / ".github" / "workflows"
+        used = wf.is_dir() and any(
+            "--require-hashes" in f.read_text(encoding="utf-8", errors="ignore")
+            for f in wf.glob("*.y*ml"))
+        text = lock.read_text(encoding="utf-8", errors="ignore")
+        n_hashes = text.count("--hash=")
+        if used:
+            findings.append(Finding(
+                check=NAME, title=title, title_he=title_he,
+                verdict=Verdict.PASS, severity=Severity.HIGH,
+                detail=f"{lock.name} carries {n_hashes} hashes and CI installs "
+                       f"with --require-hashes, so a tampered artifact is "
+                       f"refused rather than trusted",
+                detail_he=f"{lock.name} מכיל {n_hashes} hash-ים וה-CI מתקין עם "
+                          f"--require-hashes, אז artifact שהוחלף נדחה"))
+            return
+        # A LOCK NOBODY INSTALLS FROM IS DECORATION. This is the same shape as
+        # a history ledger nothing advances: the artefact exists, looks right,
+        # and protects nothing.
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+            severity=Severity.HIGH,
+            detail=f"{lock.name} exists with {n_hashes} hashes and no workflow "
+                   f"installs with `--require-hashes` — the lock is not being "
+                   f"enforced anywhere",
+            detail_he=f"{lock.name} קיים עם {n_hashes} hash-ים ואף תהליך לא "
+                      f"מתקין עם --require-hashes — הנעילה לא נאכפת",
+            remedy="Change the install step to "
+                   "`pip install --require-hashes -r requirements.lock`. "
+                   "Generating a lock and installing from something else is "
+                   "the same shape as a ledger nothing advances.",
+            remedy_he="שנה את שלב ההתקנה ל--require-hashes. לייצר נעילה "
+                      "ולהתקין ממשהו אחר זו אותה צורה כמו יומן שאף אחד לא מקדם."))
+        return
+
     loose = floors + unconstrained
     if not loose:
         pinned = sum(1 for r in req.read_text(encoding="utf-8",

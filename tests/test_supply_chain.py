@@ -172,3 +172,59 @@ def test_a_directory_that_is_not_a_repository_says_nothing(tmp_path):
     out = []
     security._history_holds_no_credential(_m(tmp_path), out)
     assert out == []
+
+
+# ── a lock is a stronger answer than a pin, and must be seen as one ────
+
+LOCKED = ("yfinance==1.6.0 \\\n    --hash=sha256:" + "a" * 64 + "\n"
+          "pandas==3.0.5 \\\n    --hash=sha256:" + "b" * 64 + "\n")
+ENFORCED = "jobs:\n  t:\n    steps:\n      - run: pip install --require-hashes -r requirements.lock\n"
+NOT_ENFORCED = "jobs:\n  t:\n    steps:\n      - run: pip install -r requirements.txt\n"
+
+
+def _locked_project(tmp_path, workflow: str):
+    (tmp_path / "requirements.txt").write_text("yfinance==1.6.0\n", encoding="utf-8")
+    (tmp_path / "requirements.lock").write_text(LOCKED, encoding="utf-8")
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "ci.yml").write_text(workflow, encoding="utf-8")
+    return _m(tmp_path)
+
+
+def test_a_lock_that_ci_enforces_passes_and_counts_the_hashes(tmp_path):
+    f = _one(security._dependencies_are_pinned, _locked_project(tmp_path, ENFORCED))
+    assert f.verdict is Verdict.PASS
+    assert "2 hashes" in f.detail
+    assert "refused rather than trusted" in f.detail
+
+
+def test_a_lock_nobody_installs_from_is_decoration(tmp_path):
+    """THE SAME SHAPE AS A HISTORY LEDGER NOTHING ADVANCES: the artefact
+    exists, looks right, and protects nothing. Generating a lock and then
+    installing from requirements.txt is the most plausible way this goes
+    wrong, because everything in the diff looks like progress."""
+    f = _one(security._dependencies_are_pinned,
+             _locked_project(tmp_path, NOT_ENFORCED))
+    assert f.verdict is Verdict.WARN
+    assert "not being enforced" in f.detail
+    assert "--require-hashes" in f.remedy
+
+
+def test_a_lock_without_hashes_does_not_count_as_one(tmp_path):
+    """`pip freeze > requirements.lock` produces a file with the right name
+    and none of the protection. The name is not the property."""
+    (tmp_path / "requirements.txt").write_text("yfinance>=1.6.0\n", encoding="utf-8")
+    (tmp_path / "requirements.lock").write_text("yfinance==1.6.0\n", encoding="utf-8")
+    f = _one(security._dependencies_are_pinned, _m(tmp_path))
+    assert f.verdict is Verdict.WARN
+    assert "yfinance>=1.6.0" in f.evidence
+
+
+def test_pinning_without_a_lock_still_passes(tmp_path):
+    """Pinned is a real improvement over floors and must not be graded as a
+    failure for falling short of hashes — a check that only accepts the best
+    available answer gets switched off by everyone who cannot reach it yet."""
+    (tmp_path / "requirements.txt").write_text(
+        "yfinance==1.6.0\ntorch==2.13.0\n", encoding="utf-8")
+    assert _one(security._dependencies_are_pinned,
+                _m(tmp_path)).verdict is Verdict.PASS
