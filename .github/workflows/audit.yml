@@ -149,7 +149,14 @@ jobs:
       # it for work it is forbidden to do is how a fixing loop becomes an
       # expensive reporting loop.
       - name: Summon the daemon if there is something it can fix
-        if: github.event_name == 'schedule'
+        # NOT 'schedule' ONLY. The loop this must break is
+        # improve → audit → improve, and that loop runs through `workflow_run`
+        # — so blocking that one event is enough. Gating on `schedule` also
+        # blocked `workflow_dispatch`, which meant the summon path could never
+        # be exercised on demand, and a control nobody can run is a control
+        # nobody has verified. Asked to prove the daemon wakes, the honest
+        # answer was "I cannot make it try".
+        if: github.event_name != 'workflow_run'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |

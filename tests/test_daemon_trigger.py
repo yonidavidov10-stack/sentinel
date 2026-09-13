@@ -157,3 +157,29 @@ def test_a_recurring_warning_is_deliberately_not_enough(tmp_path):
                           "verdict": "warn"}],
         }), encoding="utf-8")
     assert daemon_should_act(_audit(tmp_path, _f(Verdict.WARN))) is False
+
+
+def test_the_summon_step_can_be_exercised_on_demand():
+    """A CONTROL NOBODY CAN RUN IS A CONTROL NOBODY HAS VERIFIED.
+
+    The gate read `github.event_name == 'schedule'`, which blocked
+    `workflow_dispatch` as well — so asked to prove the daemon actually wakes,
+    the honest answer was "I cannot make it try". The loop that must be broken
+    is improve → audit → improve, and that runs through `workflow_run`, so
+    excluding that one event is both necessary and sufficient.
+    """
+    here = Path(__file__).resolve().parent.parent
+    checked = 0
+    for wf in (here / ".github" / "workflows" / "audit.yml",
+               here.parent / "שוק-ההון" / "stock-predictor"
+               / ".github" / "workflows" / "audit.yml"):
+        if not wf.is_file():
+            continue
+        text = wf.read_text(encoding="utf-8")
+        summon = text[text.index("Summon the daemon"):]
+        gate = summon[summon.index("if:"):summon.index("\n", summon.index("if:"))]
+        assert "workflow_run" in gate, f"{wf}: the improve→audit→improve loop is open"
+        assert "== 'schedule'" not in gate, \
+            f"{wf}: gated on schedule, so the summon path cannot be tested"
+        checked += 1
+    assert checked, "no audit workflow found"
