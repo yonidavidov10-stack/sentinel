@@ -119,6 +119,37 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L031 — I set a question without checking whether it was already answered
+**Found** 2026-09-13, on the first pass through the section I had just written · **status: closed**
+
+Writing the open-questions section, I put the technical gate at the top and
+wrote: *"the backtest exists to avoid waiting, and no pass has used it for this
+question."*
+
+**It had.** On 2026-09-02 a pass ran five deliberate re-phasings, tabulated the
+gate's p-value across all of them, and concluded — correctly — that the effect
+was direction-stable and significance-unstable. The result was written into
+COWORK.md a thousand lines above where I was typing, and the `--grids` flag I
+would have needed already existed, added by that same pass.
+
+So the mechanism I had just fixed — a prompt steering every pass at nothing —
+I immediately refilled with a question steering the next pass at settled work.
+The failure mode was not the empty section. It was **writing instructions
+without reading what was already there**, and an empty section merely made it
+visible.
+
+**Check:** none, and that is the finding. There is no mechanical test for "did
+the author read the file". What there is: the section now carries a retired
+list with the answers and dates, so the next person to ask is answered by the
+document rather than by a re-run.
+
+**And the accident was worth more than the answer.** Re-running to verify
+turned up that every documented figure came from `--tickers 50` — a slice of a
+117-name watchlist. On the full universe the gate's effect halves and
+significance falls from 3/5 grids to 1/5, while the headline edge holds
+unchanged. A question asked in ignorance found a defect in the answer that the
+informed version would never have looked for.
+
 ## L030 — Every bot was committing under the owner's email address
 **Found** 2026-09-13, within minutes of building the commit-signing check · **status: closed**
 
