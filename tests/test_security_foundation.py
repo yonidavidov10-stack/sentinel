@@ -48,10 +48,29 @@ def _one(fn, *args):
 SHA = "a" * 40
 
 
-def test_every_action_pinned_to_a_sha_passes(tmp_path):
+def test_pinned_with_an_update_path_passes(tmp_path):
+    (tmp_path / ".github").mkdir(parents=True, exist_ok=True)
+    (tmp_path / ".github" / "dependabot.yml").write_text(
+        "version: 2\n", encoding="utf-8")
     f = _one(security._actions_are_pinned,
              _project(tmp_path, f"steps:\n  - uses: actions/checkout@{SHA}\n"))
     assert f[0].verdict is Verdict.PASS
+    assert "dependabot" in f[0].detail
+
+
+def test_pinned_with_nothing_watching_for_updates_warns(tmp_path):
+    """PINNING WITHOUT AN UPDATE PATH IS WORSE THAN NOT PINNING. The action
+    stays exactly as it was, vulnerabilities included, and "we will remember
+    to update it" is the absence of a control wearing the costume of one.
+
+    This is the case that makes the check honest. Passing a fully pinned repo
+    with nothing watching would reward a change that trades a live risk for a
+    silent, accumulating one."""
+    f = _one(security._actions_are_pinned,
+             _project(tmp_path, f"steps:\n  - uses: actions/checkout@{SHA}\n"))
+    assert f[0].verdict is Verdict.WARN
+    assert "frozen indefinitely" in f[0].detail
+    assert "dependabot.yml" in f[0].remedy
 
 
 def test_a_third_party_tag_is_the_high_severity_case(tmp_path):
