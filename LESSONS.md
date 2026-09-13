@@ -119,6 +119,43 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L030 — Every bot was committing under the owner's email address
+**Found** 2026-09-13, within minutes of building the commit-signing check · **status: closed**
+
+Seven places across six workflows did this:
+
+```
+git config user.name  "sentinel audit bot"
+git config user.email "yonidavidov10@gmail.com"
+```
+
+The name said bot. **The address said human.** So every automated commit in
+both repositories was already indistinguishable from one forged with
+`git commit --author "DarthGenos <yonidavidov10@gmail.com>"` — which is the
+precise thing commit signing exists to expose.
+
+It went unnoticed because it looks like tidiness. Setting the owner's address
+on a bot reads as "attribute this to the account", and it is the opposite:
+it launders an unsigned, unattributable commit into one that appears to be a
+person's.
+
+Building the signing check is what surfaced it — the check immediately flagged
+an "Audit history" commit, which was correct and for a reason I had not
+expected. **A check whose first finding surprises its author is the check
+earning its keep.**
+
+**Check:** `_owner_commits_are_signed` exempts by ADDRESS, deliberately, and
+the test for that is the one that matters. Exempting by NAME would have hidden
+the whole attack: call yourself "audit bot", use the owner's address, and be
+waved through. Each bot now has its own `@users.noreply.github.com` address —
+reserved by GitHub for exactly this, resolving to no account, and staying
+distinct in `git log` rather than all collapsing into "bot".
+
+And the honest limit, recorded so nobody oversells it later: an attacker
+holding a workflow token still commits as a bot and is not caught by this.
+What stands against that is the workflows being in git and
+`_history_is_append_only`. Signing narrows the hole. It does not close one.
+
 ## L029 — A prompt pointed at a section that did not exist, for two weeks
 **Found** 2026-09-13, explaining to the owner what the improvement pass does · **status: closed**
 

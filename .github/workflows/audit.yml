@@ -147,8 +147,17 @@ jobs:
         if: always()
         run: |
           [ -d .audit-history ] || exit 0
+          # A BOT MUST NOT COMMIT UNDER THE OWNER'S ADDRESS. It did until
+          # 2026-09-13, which made every automated commit indistinguishable
+          # from a human one forged with `git commit --author` — the exact
+          # thing commit signing exists to expose. The bot has no key and
+          # cannot sign, so the only honest arrangement is for it to say who
+          # it really is.
+          #
+          # noreply.github.com is reserved by GitHub for exactly this: it
+          # resolves to no account and can never be mistaken for a person.
           git config user.name  "sentinel audit bot"
-          git config user.email "yonidavidov10@gmail.com"
+          git config user.email "sentinel-audit-bot@users.noreply.github.com"
           git add .audit-history
           git diff --cached --quiet && { echo "Nothing new to keep."; exit 0; }
           git commit -q -m "Audit history: $(date -u +%Y-%m-%dT%H:%MZ)"
