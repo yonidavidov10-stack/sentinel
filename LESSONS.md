@@ -119,6 +119,34 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L036 — The error path had never run, and it was broken
+**Found** 2026-09-13, by a test that was about something else · **status: closed**
+
+`security.check()` builds an UNKNOWN when `git ls-files` fails, and returns it
+with `duration_s=t.seconds` — from inside the `with timer() as t` block. The
+timer sets `.seconds` in `__exit__`. Reading it early raises AttributeError.
+
+So auditing anything that is not a git repository **crashed the entire security
+check** instead of reporting the finding it had just constructed, two lines
+above.
+
+It survived because every project ever audited was a git repo. The branch was
+written, reviewed, committed and never once executed — and it was wrong the
+whole time. **An unexercised error path is not a safety net; it is a second
+failure waiting for the first one.**
+
+Found by a test that used a bare temp directory for an unrelated reason. Not by
+review, and not by any of the audits this tool has run on itself.
+
+**Check:** `test_the_security_check_survives_a_directory_that_is_not_a_repository`
+audits a bare directory and asserts it reports rather than raises. The other
+three `duration_s=t.seconds` sites were checked by indentation and are outside
+their blocks, which is correct.
+
+**The shape to hunt for:** a `return` inside a `with` that reads something the
+context manager sets on exit. More broadly — every branch that only runs when
+something has already gone wrong is a branch nothing has tried.
+
 ## L035 — The daemon was summoned on one verdict out of three
 **Found** 2026-09-13, from the owner: "it still only sends messages and does not fix the problems" · **status: closed**
 

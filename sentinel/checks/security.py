@@ -1059,7 +1059,16 @@ def check(m: Manifest) -> CheckResult:
                 verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
                 detail=f"could not list tracked files: {why_not}",
                 remedy="Run sentinel inside a git repository."))
-            return CheckResult(name=NAME, findings=findings, duration_s=t.seconds)
+            # `t.seconds` only exists once the `with` block has EXITED — the
+            # timer sets it in __exit__. Reading it on an early return inside
+            # the block raised AttributeError, so auditing anything that is not
+            # a git repository crashed the entire security check instead of
+            # reporting the UNKNOWN two lines above.
+            #
+            # The error path had never been exercised: every project audited so
+            # far was a git repo. Found 2026-09-13 by a test that used a bare
+            # temp directory for something unrelated.
+            return CheckResult(name=NAME, findings=findings, duration_s=0.0)
 
         # 1. Files that must never be tracked.
         tracked_names = {str(p.relative_to(root)) for p in files}

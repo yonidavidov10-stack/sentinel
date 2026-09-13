@@ -178,3 +178,22 @@ def test_gh_failing_is_unknown_not_a_pass(tmp_path, monkeypatch):
     _with_gh(monkeypatch, "", ok=False)
     assert _one(security._visibility_matches_the_declaration,
                 _project(tmp_path, visibility="private")).verdict is Verdict.UNKNOWN
+
+
+def test_the_security_check_survives_a_directory_that_is_not_a_repository(tmp_path):
+    """THE ERROR PATH HAD NEVER RUN. Every project audited so far was a git
+    repository, so the early return taken when `git ls-files` fails was dead
+    code — and it read `t.seconds`, which the timer only sets on exiting its
+    block. Auditing a bare directory crashed the whole security check with
+    AttributeError instead of reporting the UNKNOWN it had just constructed.
+
+    An unexercised error path is not a safety net. It is a second failure
+    waiting for the first one."""
+    from sentinel.checks import security as sec
+
+    (tmp_path / "SENTINEL.toml").write_text(
+        '[project]\nname = "t"\npurpose = "p"\n', encoding="utf-8")
+    result = sec.check(Manifest(path=tmp_path / "SENTINEL.toml", name="t",
+                                purpose="p"))
+    assert result.findings, "it must report something, not crash"
+    assert any(f.verdict is Verdict.UNKNOWN for f in result.findings)
