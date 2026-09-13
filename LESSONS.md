@@ -119,6 +119,35 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L028 — The injection check passed on a workflow written to be vulnerable
+**Found** 2026-09-13, in the first hour of the security foundation · **status: closed**
+
+The new check looked for a line beginning `run:`. A workflow step is written
+`- run: |` — the dash comes first. The opening line never matched, so no body
+line was ever considered inside a block, and the check reported PASS on a
+workflow whose only purpose was to be vulnerable.
+
+It passed on both real projects too. Not because they are clean — they are —
+but because it was testing nothing at all. **The green tick was the same green
+tick either way, and that is the whole problem.**
+
+Third time this exact shape has appeared: the credential-restore regex that
+matched `run:` and a git verb on one line ([[L020]]), the grep expectation
+whose config keys the handler never read ([[L023]]), and now this. The common
+thread is not YAML. It is that **all three were verified only against the state
+they wanted to see.**
+
+**Check:** the block is now found by indentation — the `run:` line's indent
+opens it, a line at or below that indent closes it — and both a single-line
+`run: echo ...` and a multi-line body are covered. Four tests: the attack
+caught, the `env:` fix not flagged, `github.run_id` not flagged, and
+`head_ref` caught.
+
+The rule this project keeps relearning, stated once more: **A CHECK IS NOT
+WRITTEN UNTIL IT HAS BEEN SEEN TO FAIL.** Not reasoned about — seen. Every time
+that step was skipped here, the check was broken, and every time it was taken,
+the break was found within a minute.
+
 ## L027 — Three mistakes of mine in one session, and what now catches each
 **Found** 2026-09-13, after the owner asked whether any of this could cause problems · **status: closed**
 

@@ -62,6 +62,234 @@ TEXT_SUFFIXES = {".py", ".js", ".ts", ".jsx", ".tsx", ".sh", ".bash", ".zsh",
                  ".ini", ".env", ".html", ".css", ".sql", ".rb", ".go", ".rs"}
 
 
+# ── threat 1: someone else gets in ─────────────────────────────────────
+
+_USES = re.compile(r"^\s*-?\s*uses:\s*([^\s@]+)@([^\s#]+)", re.M)
+_SHA = re.compile(r"^[0-9a-f]{40}$")
+# GitHub's own namespaces. Still a pointer, still movable, but a different risk
+# class from a community action, and worth saying separately.
+_FIRST_PARTY = ("actions/", "github/", "anthropics/")
+
+# A workflow that interpolates attacker-controllable text straight into a shell
+# is the classic Actions RCE: a branch or issue title becomes a command.
+_UNTRUSTED = re.compile(
+    r"\$\{\{\s*github\.(event\.|head_ref)[^}]*\}\}")
+
+
+def _actions_are_pinned(m: Manifest, findings: list[Finding]) -> None:
+    """A tag is a pointer its owner can move. A SHA is a version.
+
+    `uses: actions/checkout@v4` does not name code. It names a label that the
+    action's owner can repoint at any commit, which then runs inside the job
+    holding `contents: write` and every secret that job has.
+
+    This REPORTS rather than demands. Pinning to a SHA stops security patches
+    arriving on their own, so something must update them — a real trade, and
+    the owner's to make. A finding that names the cost is honest; one that
+    insists on a default is not.
+    """
+    title = "Third-party actions are pinned to a commit, not a movable tag"
+    title_he = "פעולות צד-שלישי מוצמדות לקומיט, לא לתגית שאפשר להזיז"
+
+    wf = m.root / ".github" / "workflows"
+    if not wf.is_dir():
+        return
+    tagged_third, tagged_first = [], []
+    for f in sorted(wf.glob("*.y*ml")):
+        for action, ref in _USES.findall(f.read_text(encoding="utf-8",
+                                                     errors="ignore")):
+            if _SHA.match(ref):
+                continue
+            where = f"{f.name}: {action}@{ref}"
+            (tagged_first if action.startswith(_FIRST_PARTY)
+             else tagged_third).append(where)
+
+    if not tagged_third and not tagged_first:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.MEDIUM,
+            detail="every action is pinned to a commit SHA",
+            detail_he="כל פעולה מוצמדת ל-SHA של קומיט"))
+        return
+
+    if tagged_third:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+            severity=Severity.HIGH,
+            detail=f"{len(tagged_third)} third-party action(s) run from a tag "
+                   f"their author can repoint at any commit",
+            detail_he=f"{len(tagged_third)} פעולות צד-שלישי רצות מתגית "
+                      f"שהמחבר שלהן יכול להזיז לכל קומיט",
+            evidence="\n".join(tagged_third[:10]),
+            remedy="Replace the tag with the commit SHA it currently points "
+                   "at, and add the version as a comment. Note the cost: a "
+                   "pinned action stops receiving security patches, so "
+                   "something has to update it.",
+            remedy_he="החלף את התגית ב-SHA שהיא מצביעה אליו כרגע, עם הגרסה "
+                      "בהערה. שים לב למחיר: פעולה מוצמדת מפסיקה לקבל עדכוני "
+                      "אבטחה, אז מישהו צריך לעדכן אותה."))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+        severity=Severity.LOW,
+        detail=f"{len(tagged_first)} first-party action(s) run from a tag — a "
+               f"smaller risk than a community action, and still a pointer "
+               f"rather than a version",
+        detail_he=f"{len(tagged_first)} פעולות של הבית רצות מתגית — סיכון קטן "
+                  f"מפעולה קהילתית, ועדיין מצביע ולא גרסה",
+        evidence="\n".join(tagged_first[:10]),
+        remedy="Worth pinning if these jobs hold secrets that matter. Decide "
+               "once, and write the decision down rather than leaving it to "
+               "whoever edits the workflow next.",
+        remedy_he="שווה להצמיד אם למשימות האלה יש סודות שחשובים. תחליט פעם "
+                  "אחת, ותכתוב את ההחלטה."))
+
+
+def _no_untrusted_input_in_shell(m: Manifest, findings: list[Finding]) -> None:
+    """A branch name or issue title reaching a `run:` block is a shell command.
+
+    Measured clean on 2026-09-13 across both projects. It stays checked because
+    the day it stops being true is the day someone adds a workflow that reacts
+    to a pull request, and that is exactly when nobody is looking for this.
+    """
+    title = "No attacker-controllable text is interpolated into a shell"
+    title_he = "שום טקסט שתוקף שולט בו לא מוזרק לתוך shell"
+
+    wf = m.root / ".github" / "workflows"
+    if not wf.is_dir():
+        return
+    # BLOCK DETECTION BY INDENTATION, and the first version got it wrong in a
+    # way that matters: it looked for a line starting with `run:`, and a step
+    # is written `- run: |` — the dash comes first. So the opening line never
+    # matched, the body lines were never inside a block, and the check reported
+    # PASS on a workflow written to be vulnerable. It passed on both real
+    # projects too, for the same reason: it was testing nothing.
+    #
+    # Only writing the failing case found it, which is the third time that has
+    # been the only thing that would.
+    hits = []
+    for f in sorted(wf.glob("*.y*ml")):
+        run_indent = None
+        for lineno, line in enumerate(
+                f.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+
+            if run_indent is not None and stripped and indent <= run_indent:
+                run_indent = None          # dedented out of the block
+
+            opens = stripped.startswith("run:") or stripped.startswith("- run:")
+            if opens:
+                run_indent = indent
+                if _UNTRUSTED.search(line):      # single-line `run: echo ...`
+                    hits.append(f"{f.name}:{lineno}: {stripped[:120]}")
+                continue
+
+            if run_indent is not None and _UNTRUSTED.search(line):
+                hits.append(f"{f.name}:{lineno}: {stripped[:120]}")
+
+    if not hits:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail="no workflow puts event data directly into a command",
+            detail_he="אף תהליך לא מכניס נתוני אירוע ישירות לפקודה"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.CRITICAL,
+        detail=f"{len(hits)} place(s) interpolate event data into a shell "
+               f"command, where the text becomes part of the command itself",
+        detail_he=f"{len(hits)} מקומות מזריקים נתוני אירוע לפקודת shell, "
+                  f"והטקסט הופך לחלק מהפקודה",
+        evidence="\n".join(hits[:10]),
+        remedy="Pass it through `env:` and reference it as \"$VAR\" inside "
+               "the script. The shell then treats it as a value; interpolation "
+               "makes it code.",
+        remedy_he="העבר דרך env: והשתמש ב-\"$VAR\" בתוך הסקריפט. אז ה-shell "
+                  "מתייחס לזה כערך; הזרקה הופכת את זה לקוד."))
+
+
+def _irreplaceable_has_a_second_copy(m: Manifest,
+                                     findings: list[Finding]) -> None:
+    """What cannot be recreated, and whether it exists in more than one place.
+
+    THE MOST VALUABLE CONTROL AVAILABLE TO THESE PROJECTS, and not a firewall.
+
+    stock-predictor's record — seventy predictions, forty-four lessons, months
+    of daily snapshots — is a log of what happened on particular days at
+    particular prices. Re-running the code does not reproduce it. It exists
+    only in the GitHub repository, `main` cannot be branch-protected on a free
+    private repo, and several unattended workflows hold `contents: write`.
+
+    A project declares what is irreplaceable; nothing here guesses. Silence
+    means the project has not answered the question, which is reported as
+    UNKNOWN rather than passed over — "nobody said" is not "nothing matters".
+    """
+    title = "What cannot be recreated exists in more than one place"
+    title_he = "מה שאי אפשר לשחזר קיים ביותר ממקום אחד"
+
+    declared = m.security.get("irreplaceable") or []
+    if not declared:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail="the manifest does not say what in this project could not "
+                   "be rebuilt from the code, so nothing can check whether it "
+                   "would survive losing the remote",
+            detail_he="המניפסט לא אומר מה בפרויקט הזה לא ניתן לבנות מחדש מהקוד, "
+                      "אז אי אפשר לבדוק אם זה ישרוד אובדן של ה-remote",
+            remedy="Add `irreplaceable = [...]` to [security], listing paths "
+                   "whose loss would be permanent. An empty list is a valid "
+                   "answer and means 'everything here regenerates' — say it "
+                   "explicitly rather than by omission.",
+            remedy_he="הוסף irreplaceable = [...] ל-[security], עם נתיבים "
+                      "שאובדנם בלתי הפיך. רשימה ריקה היא תשובה תקפה ומשמעה "
+                      "'הכל כאן נבנה מחדש' — אמור זאת במפורש."))
+        return
+
+    missing = [str(rel) for rel in declared if not (m.root / str(rel)).exists()]
+    if missing:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL,
+            detail="a path declared irreplaceable is not here at all",
+            detail_he="נתיב שהוצהר כבלתי ניתן לשחזור לא נמצא כאן בכלל",
+            evidence="\n".join(missing),
+            remedy="Either it moved and the manifest is stale, or it is gone. "
+                   "Find out which before anything else.",
+            remedy_he="או שהוא עבר והמניפסט מיושן, או שהוא אבד. ברר מה משניהם "
+                      "לפני כל דבר אחר."))
+        return
+
+    copies = m.security.get("second_copy") or ""
+    if not copies:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+            severity=Severity.CRITICAL,
+            detail=f"{len(declared)} irreplaceable path(s), and no second copy "
+                   f"declared — they exist only in this repository and in "
+                   f"whatever it was cloned from",
+            detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור, ואין עותק "
+                      f"שני מוצהר — הם קיימים רק בריפו הזה ובמה שממנו שוכפל",
+            evidence="\n".join(str(r) for r in declared[:10]),
+            remedy="Decide where a second copy lives and record it as "
+                   "`second_copy` in [security]. The point is not the file "
+                   "format — it is a location a bad force-push cannot reach.",
+            remedy_he="החלט איפה יושב עותק שני ורשום אותו כ-second_copy תחת "
+                      "[security]. העיקר אינו הפורמט — אלא מקום שדחיפה כוחנית "
+                      "שגויה לא מגיעה אליו."))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+        severity=Severity.HIGH,
+        detail=f"{len(declared)} irreplaceable path(s), second copy: {copies}",
+        detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור, עותק שני: {copies}"))
+
+
 def _tracked_files(root: Path) -> tuple[list[Path], str]:
     """Files git actually carries. Returns ([], reason) when git cannot answer."""
     r = run("git ls-files -z", root, timeout_s=60)
@@ -203,5 +431,20 @@ def check(m: Manifest) -> CheckResult:
                 check=NAME, title="No high-risk code patterns in tracked source", title_he="אין דפוסי קוד בסיכון גבוה בקוד שבמעקב",
                 verdict=Verdict.PASS, severity=Severity.MEDIUM,
                 detail="none found"))
+
+        # The two threats, side by side because they are NOT the same threat:
+        # the first two keep other people out, the third keeps us from
+        # destroying something we cannot rebuild. SECURITY.md says why they
+        # need different machinery.
+        for step in (_actions_are_pinned, _no_untrusted_input_in_shell,
+                     _irreplaceable_has_a_second_copy):
+            try:
+                step(m, findings)
+            except Exception as ex:                        # noqa: BLE001
+                findings.append(Finding(
+                    check=NAME, title=f"security step {step.__name__}",
+                    verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+                    detail=f"the check raised {type(ex).__name__}: {ex}",
+                    remedy="This is a bug in sentinel, not in the project."))
 
     return CheckResult(name=NAME, findings=findings, duration_s=t.seconds)
