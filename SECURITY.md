@@ -150,8 +150,13 @@ it. Treat anything that reached a commit as public.
 Stated plainly, because a security document that only lists strengths is
 marketing.
 
-* **A compromised Mac.** Every credential here is reachable from this laptop,
-  including the commit-signing key, which has no passphrase.
+* **A compromised Mac.** Every credential here is reachable from this laptop.
+  The signing key now carries a passphrase held in the macOS Keychain, which
+  stops the KEY FILE being copied and used elsewhere — the realistic theft. It
+  does NOT stop a process running as this user from asking the agent to sign,
+  because the Keychain is unlocked whenever the user is logged in. Worth doing;
+  not the same as protecting against a compromised machine, and saying
+  otherwise would be the more comfortable error.
 * **A compromised GitHub account.** 2FA is on, which is the control that
   matters. If it falls anyway, the external drive is the only thing that
   survives — the archive repo lives under the same account.
@@ -325,8 +330,10 @@ the same rate applies to what has not been examined yet.**
 
 1. **Hash-pin the dependency tree.** Still the largest remaining gap and the
    only one with a known answer.
-2. **A passphrase on the signing key.** One command:
-   `ssh-keygen -p -f ~/.ssh/id_ed25519_signing`.
+2. ~~A passphrase on the signing key.~~ **DONE 2026-09-13**, with
+   `~/.ssh/config` set to `UseKeychain yes` / `AddKeysToAgent yes` so it is
+   typed once on this machine. Verified: the key refuses an empty passphrase,
+   it is loaded in the agent, and a commit still signs and verifies (`G`).
 3. **Secret age.** Nothing knows how long a token has been in place. A
    credential that has not rotated in a year is not a finding today and will
    be one eventually.
