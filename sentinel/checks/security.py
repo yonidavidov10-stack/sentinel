@@ -628,6 +628,176 @@ def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
                   "והם יוצאים מהחלון מעצמם."))
 
 
+def _dependencies_are_pinned(m: Manifest, findings: list[Finding]) -> None:
+    """Does `pip install` in CI get the same packages every time?
+
+    THE SHAPE OF THIS RISK IS DIFFERENT FROM THE OTHERS HERE, and worse. A
+    package's install hooks execute as the job installing it — a job holding
+    every secret the workflow has. So `yfinance>=1.6.0` means an upstream
+    account compromise, anywhere in the transitive tree, runs code beside the
+    prediction book and the deploy key. **It needs no mistake on our part and
+    no access to this account at all**, which is what separates it from every
+    other finding in this file.
+
+    A floor (`>=`) is not a version. It is an instruction to take whatever was
+    published most recently, evaluated fresh on every CI run.
+
+    NOT asking for hashes. `--require-hashes` also defeats a compromised index
+    serving a different artifact under a version already used, and it needs a
+    full transitive lock regenerated per platform. Worth doing and a much
+    bigger change; demanding it here would make this finding unactionable, and
+    an unactionable finding is one people learn to skip.
+    """
+    title = "CI installs the same dependencies every time"
+    title_he = "ה-CI מתקין את אותן תלויות בכל פעם"
+
+    req = m.root / "requirements.txt"
+    if not req.is_file():
+        return
+
+    floors, unconstrained = [], []
+    for raw in req.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if not line or line.startswith("-"):
+            continue
+        if "==" in line:
+            continue
+        if any(op in line for op in (">=", ">", "~=", "<", "!=")):
+            floors.append(line)
+        else:
+            unconstrained.append(line)
+
+    loose = floors + unconstrained
+    if not loose:
+        pinned = sum(1 for r in req.read_text(encoding="utf-8",
+                                              errors="ignore").splitlines()
+                     if "==" in r.split("#", 1)[0])
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"all {pinned} direct dependenc(ies) name an exact version",
+            detail_he=f"כל {pinned} התלויות הישירות נוקבות בגרסה מדויקת"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+        severity=Severity.HIGH,
+        detail=f"{len(loose)} dependenc(ies) are not pinned, so CI installs "
+               f"whatever was published most recently — and a package's "
+               f"install hooks run inside the job holding every secret",
+        detail_he=f"{len(loose)} תלויות אינן מוצמדות, אז ה-CI מתקין את מה "
+                  f"שפורסם אחרון — וקוד ההתקנה של חבילה רץ בתוך המשימה "
+                  f"שמחזיקה את כל הסודות",
+        evidence="\n".join(loose[:10]),
+        remedy="Pin each to the version the suite actually passes against "
+               "(`pip freeze` on the working environment), and add the `pip` "
+               "ecosystem to dependabot so pinning does not freeze the "
+               "vulnerabilities in place as well.",
+        remedy_he="הצמד כל אחת לגרסה שהסוויטה באמת עוברת מולה, והוסף את pip "
+                  "ל-dependabot כדי שההצמדה לא תקפיא גם את הפגיעויות."))
+
+
+def _history_holds_no_credential(m: Manifest, findings: list[Finding]) -> None:
+    """Was a secret ever committed, even if it is gone from the working tree?
+
+    THE GAP THE OTHER SCANNER LEAVES, and it is the one that matters most:
+    `_tracked_files` reads the CURRENT tree. A token committed in June and
+    deleted in July is absent from every file it looks at and present in every
+    clone of the repository, forever. Deleting a secret from a file does not
+    delete it — that is the single most common way credentials leak from
+    repositories, and a working-tree scanner reports a clean bill of health
+    the whole time.
+
+    Scans the diffs of recent commits rather than every blob ever written:
+    a full history walk is slow enough that it would be run once and then
+    turned off, and recent history is where an accident is still fixable —
+    rotate the credential, and consider the older one already public.
+    """
+    title = "No credential was committed and later deleted"
+    title_he = "לא הוקמט אישור גישה שנמחק אחר כך"
+
+    if not (m.root / ".git").exists():
+        return
+
+    depth = int(m.security.get("history_scan_commits", 200))
+    allow = [str(a) for a in (m.security.get("allow_patterns") or [])]
+
+    # SCANNED IN PYTHON, NOT BY `git log -G`. The first version passed each
+    # pattern to git, which uses POSIX regex — a different dialect. `\b` and
+    # `{8,10}` are PCRE/Python spellings, so the Telegram-token pattern matched
+    # nothing there while matching correctly in the working-tree scanner. Two
+    # scanners claiming to use "the same shapes" and quietly disagreeing about
+    # what a shape IS is worse than having one.
+    #
+    # Reading the diffs and applying the SAME compiled patterns makes that
+    # impossible by construction. `--unified=0` keeps only changed lines, which
+    # is the question anyway: was this ever written down.
+    r = run(f"git log -{depth} -p --unified=0 --format='commit %h %s'",
+            m.root, timeout_s=180, clip=False)
+    if not r.ok:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail="could not read the commit history",
+            detail_he="לא הצלחתי לקרוא את היסטוריית הקומיטים",
+            evidence=(r.error or r.output)[:200],
+            remedy="Check that `git` is available and this is a repository.",
+            remedy_he="בדוק ש-git זמין ושזה ריפו."))
+        return
+
+    compiled = [(re.compile(pat), label) for pat, label in SECRET_PATTERNS]
+    hits, subject = [], ""
+    for line in r.stdout.splitlines():
+        if line.startswith("commit "):
+            subject = line[len("commit "):]
+            continue
+        # Only added or removed lines. A credential sitting unchanged in
+        # context lines was already found by the working-tree scanner.
+        if not (line.startswith("+") or line.startswith("-")):
+            continue
+        if line.startswith(("+++", "---")):
+            continue
+        if any(a and a in line for a in allow) or any(a and a in subject
+                                                      for a in allow):
+            continue
+        for rx, label in compiled:
+            if rx.search(line):
+                hits.append(f"{label} in {subject[:60]}")
+                break
+
+    # One entry per commit: a token written and then removed matches twice, and
+    # reporting it twice makes one accident look like two.
+    hits = list(dict.fromkeys(hits))
+
+    if not hits:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"no credential shape appears in the last {depth} commits, "
+                   f"added or removed",
+            detail_he=f"שום צורת אישור לא מופיעה ב-{depth} הקומיטים האחרונים"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.CRITICAL,
+        detail=f"{len(hits)} commit(s) added or removed something shaped like a "
+               f"credential — deleting it from the file did not delete it from "
+               f"the repository",
+        detail_he=f"{len(hits)} קומיטים הוסיפו או הסירו משהו בצורת אישור גישה — "
+                  f"מחיקה מהקובץ לא מחקה אותו מהריפו",
+        evidence="\n".join(hits[:8]),
+        remedy="ROTATE THE CREDENTIAL FIRST. Rewriting history is secondary "
+               "and often impossible — every existing clone already has it. "
+               "Treat anything that reached a commit as public. If the match "
+               "is documentation quoting a token SHAPE, add the distinguishing "
+               "text to [security].allow_patterns.",
+        remedy_he="החלף את האישור קודם. שכתוב היסטוריה משני ולעתים בלתי אפשרי — "
+                  "כל שכפול קיים כבר מחזיק אותו. התייחס לכל מה שהגיע לקומיט "
+                  "כאל ציבורי. אם זו דוקומנטציה שמצטטת צורה, הוסף את הטקסט "
+                  "המבחין ל-[security].allow_patterns."))
+
+
 def _tracked_files(root: Path) -> tuple[list[Path], str]:
     """Files git actually carries. Returns ([], reason) when git cannot answer."""
     r = run("git ls-files -z", root, timeout_s=60)
@@ -776,7 +946,8 @@ def check(m: Manifest) -> CheckResult:
         # need different machinery.
         for step in (_actions_are_pinned, _no_untrusted_input_in_shell,
                      _irreplaceable_has_a_second_copy,
-                     _history_is_append_only, _owner_commits_are_signed):
+                     _history_is_append_only, _owner_commits_are_signed,
+                     _dependencies_are_pinned, _history_holds_no_credential):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

@@ -20,10 +20,34 @@ The classic one, and for these projects the smaller of the two.
 | Secrets in source | Clean. Four checks already cover this. |
 | Script injection into workflows | None. No `${{ github.event.* }}` reaches a `run:` block. |
 | Workflow permissions | `contents: write` everywhere it appears, and every instance is needed — these workflows commit. No `write-all`, no `pull_request_target`. |
-| Third-party actions | **Pinned to mutable tags** (`@v4`, `@v1`), not commit SHAs. |
-| Dependencies | Unmeasured. Next. |
+| Third-party actions | Were pinned to mutable tags. **Fixed** — 28 references pinned to commit SHAs across three projects. |
+| Python dependencies | Were floors (`>=`), so CI installed whatever had been published that morning. **Fixed** — pinned to the versions the suite passes against. |
+| Credentials in git history | Was **never checked** — the scanner read the working tree only. Now scanned. |
 
-### The one real exposure: tags are not versions
+### The exposure that mattered most, and it was not the tags
+
+**A package's install hooks run as the job installing it.** `pip install -r
+requirements.txt` in CI executes inside a job holding the prediction book, the
+bot tokens, the archive deploy key and a Claude Code token — and until
+2026-09-13 that file said `yfinance>=1.6.0`, `torch>=2.13.0`,
+`transformers>=5.15.0`. A floor is not a version; it is an instruction to take
+whatever was published most recently, re-evaluated on every run.
+
+**This is the only risk in this document that needs no mistake on our part and
+no access to the account.** An upstream compromise anywhere in the transitive
+tree is sufficient. Everything else here requires someone to get in, or us to
+slip.
+
+Pinned now, to the versions the suite actually passes against — read from the
+working environment rather than chosen — with dependabot watching the `pip`
+ecosystem so pinning does not freeze the vulnerabilities alongside the
+versions. NOT hash-pinned: `--require-hashes` would also defeat a compromised
+index serving a different artifact under a known version, and it needs a full
+transitive lock regenerated per platform (this builds on macOS arm64 and runs
+on linux x86_64). Worth doing, a much bigger change, and recorded here rather
+than silently skipped.
+
+### Tags are not versions either
 
 `uses: actions/checkout@v4` does not name a version. It names a POINTER that
 the action's owner can move at any time, to any commit. Whatever it points at
@@ -97,16 +121,51 @@ Mistakes are not made impossible. Four days of evidence says so.
 
 ---
 
+### Deleting a secret from a file does not delete it
+
+The credential scanner read the working tree. A token committed in June and
+deleted in July is absent from every file it examines and present in every
+clone of the repository, forever — and the scanner reports clean the whole
+time. **That is the single most common way credentials leak from repositories**
+and it went unchecked here until 2026-09-13.
+
+The history scan reads the diffs of recent commits and applies the same
+compiled patterns as the tree scanner. The first version passed them to
+`git log -G` instead, which uses POSIX regex — a different dialect, in which
+`\b` and `{8,10}` mean other things. The Telegram-token pattern matched
+nothing there while matching correctly in the tree scanner: two scanners
+claiming the same shapes and quietly disagreeing about what a shape IS.
+
+Its first real run found a token in this repository's own history — a fixture
+for testing `scrub()`, committed and removed once the tree scanner flagged it,
+and therefore permanent. Allowed by its own placeholder prefix rather than by
+silencing the Telegram pattern, because silencing a shape to quiet one
+instance is how a scanner stops scanning.
+
+**The remedy is rotation, not rewriting.** Every clone taken since already has
+it. Treat anything that reached a commit as public.
+
 ## What this does NOT protect against
 
 Stated plainly, because a security document that only lists strengths is
 marketing.
 
-* **A compromised Mac.** Every credential here is reachable from this laptop.
-* **A compromised GitHub account.** The tokens live there.
+* **A compromised Mac.** Every credential here is reachable from this laptop,
+  including the commit-signing key, which has no passphrase.
+* **A compromised GitHub account.** 2FA is on, which is the control that
+  matters. If it falls anyway, the external drive is the only thing that
+  survives — the archive repo lives under the same account.
+* **A stolen workflow token.** Commits made with it are attributed to a bot,
+  and bot commits are exempt from the signing check because runners hold no
+  key. Signing narrows that hole; it does not close it. What stands against it
+  is the workflows being in git and the append-only history check.
 * **The improvement pass making the predictions worse.** Its five guards prove
   it did not lie about its work. They say nothing about whether it was right.
-* **Anything about dependencies.** Not yet measured.
+* **A transitively compromised dependency.** Direct dependencies are pinned;
+  their dependencies are resolved fresh. Hash-pinning would close this and has
+  not been done.
+* **A compromised package index** serving a different artifact under a version
+  already pinned. Hashes are the answer; see above.
 * **Disk loss**, for any backup that lives only on this Mac.
 
 ---
@@ -124,6 +183,8 @@ marketing.
 | The archive keeps receiving | our own mistakes | built 2026-09-13 |
 | Manifest cannot shrink unnoticed | our own mistakes | built 2026-09-13 |
 | Nothing tracked that .gitignore claims to hide | both | built 2026-09-13 |
+| Dependencies pinned + dependabot watching | intrusion | **built 2026-09-13** |
+| No credential in git history, not just the tree | intrusion | **built 2026-09-13** |
 
 ### History is append-only — what replaces branch protection
 
@@ -212,9 +273,43 @@ floor, in order of value:
 
 None of these is blocked by anything except a decision.
 
-## Status
+## Status, 2026-09-13
 
-This is a foundation. The threat model above is measured; the controls are
-partly built. The next thing to decide is where a second copy of the
-prediction book should live — and that is the owner's call, because every
-option trades convenience against a different failure.
+**Every item this document opened with is built, and each one is measured
+rather than asserted.** Eleven checks run against every audited project, on
+every audit, and report to @Bugfixer_BS7bot.
+
+What changed today, in the order it mattered:
+
+1. **Dependencies pinned.** The only risk here that needs no mistake on our
+   part.
+2. **A second copy of the prediction book**, two layers, both verified *by
+   restoring* — the archive cloned from GitHub and replayed, 142 rows
+   compared; the drive restored from the drive itself, 138 rows.
+3. **Git history scanned for credentials**, not just the working tree.
+4. **Actions pinned to SHAs** with dependabot watching, across three projects.
+5. **Commits signed**, and every bot stopped committing under the owner's
+   address — which had made automated commits indistinguishable from forged
+   human ones.
+6. **The append-only history ledger wired up**, after it was found guarding
+   only ancient history because nothing advanced it.
+
+**The honest caveat about all of it.** Six of these were built today, and four
+of the six had a defect found within hours of being written — a check that
+passed on a workflow written to be vulnerable, a regex dialect mismatch that
+made a scanner silently blind, a ledger nothing advanced, a test that failed on
+`sys.path.insert`. Every one was caught by writing the failing case. **Assume
+the same rate applies to what has not been examined yet.**
+
+### What to do next, in order
+
+1. **Hash-pin the dependency tree.** `pip-compile --generate-hashes`, per
+   platform. The largest remaining gap and the only one with a known answer.
+2. **A passphrase on the signing key**, or accept that anyone with the Mac can
+   sign as the owner. One command: `ssh-keygen -p -f ~/.ssh/id_ed25519_signing`.
+3. **Check workflow permissions mechanically.** They were read once by eye on
+   2026-09-13 and found minimal. Nothing watches them.
+4. **Check repository visibility against a declaration.** A private repo made
+   public by accident would be silent and total, and nothing currently notices.
+
+Numbers 3 and 4 are cheap and unbuilt. That is the honest state.

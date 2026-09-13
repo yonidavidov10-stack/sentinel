@@ -174,7 +174,18 @@ second_copy_max_age_days = 45
 # The scanner finds the patterns it is looking for, in the file that lists
 # them. Silenced by naming the marker rather than the whole file: a real
 # eval() added to security.py later would still be flagged.
-allow_patterns = ["executes whatever reaches it"]
+allow_patterns = [
+    "executes whatever reaches it",
+    # A PLACEHOLDER, NOT A TOKEN. `1234567890:AA…` was a fixture for testing
+    # `scrub()`, committed and later removed once the scanner flagged it — so
+    # it lives in history forever, and the history check finds it every time.
+    #
+    # Allowed by its own distinctive prefix rather than by silencing the
+    # Telegram pattern: sequential digits are not an account id, and a real
+    # token would still be caught. Silencing the SHAPE to quiet one placeholder
+    # is how a scanner stops scanning.
+    "1234567890:AA",
+]
 
 [[expectations]]
 id = "audit-runs-after-the-daemon"

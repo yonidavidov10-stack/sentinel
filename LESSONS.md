@@ -119,6 +119,40 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L033 — Two scanners claiming the same patterns, in different dialects
+**Found** 2026-09-13, on the first run of the history scanner · **status: closed**
+
+The working-tree scanner reads files with Python's `re`. The new history
+scanner passed the same pattern strings to `git log -G`, which uses POSIX
+regex — where `\b` is not a word boundary and `{8,10}` is not a repetition
+count unless the engine is in extended mode.
+
+So the Telegram-token pattern matched correctly in one scanner and **matched
+nothing at all** in the other, while a comment above it claimed they used "the
+same shapes, so a pattern added there is searched here too". The claim was
+sincere and the behaviour was the opposite.
+
+Caught by a test that committed a fake Telegram token and expected a FAIL.
+Without it the check would have shipped reporting clean on the one credential
+type this project actually uses.
+
+**Check:** the history scan now reads diffs with `git log -p --unified=0` and
+applies the SAME COMPILED PATTERN OBJECTS as the tree scanner. Not the same
+strings — the same objects. Sharing a string across two regex engines is
+sharing a spelling, not a meaning.
+
+**The shape to look for:** any time the same rule is expressed twice in
+different languages — a regex in Python and in shell, a threshold in code and
+in YAML, a date format in two places — the two will agree in testing and
+diverge in production. Share the evaluated thing, not the text of it.
+
+And the first real run found a token in this repository's own history: a
+fixture for testing `scrub()`, committed then removed once the tree scanner
+flagged it, and therefore permanent. **Deleting a secret from a file does not
+delete it.** Allowed by its own placeholder prefix rather than by silencing the
+Telegram pattern — silencing a shape to quiet one instance is how a scanner
+stops scanning.
+
 ## L032 — A control nothing calls is a control that does not exist
 **Found** 2026-09-13, hours after building it · **status: closed**
 
