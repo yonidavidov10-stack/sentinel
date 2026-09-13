@@ -117,8 +117,9 @@ marketing.
 |---|---|---|
 | Secrets never committed | intrusion | 4 checks, in place before this |
 | No shell injection from event data | intrusion | built 2026-09-13 |
-| Actions pinned to a commit | intrusion | measured, reported, **not applied** — see below |
-| History is append-only | both | built 2026-09-13 |
+| History is append-only | both | built 2026-09-13; **the ledger now advances after every audit** |
+| Commits attributed to the owner are signed | intrusion | built 2026-09-13 |
+| Actions pinned + dependabot watching | intrusion | **applied 2026-09-13**, 28 references across three projects |
 | Irreplaceable data has a second copy | our own mistakes | **built, two layers, both verified by restoring** |
 | The archive keeps receiving | our own mistakes | built 2026-09-13 |
 | Manifest cannot shrink unnoticed | our own mistakes | built 2026-09-13 |
@@ -139,6 +140,16 @@ force-pushing the wrong branch leave identical evidence.
 Recording is a SEPARATE command from auditing, deliberately. An auditor that
 updates the state it checks against, in the same breath, cannot report a
 problem — it would overwrite the evidence while looking at it.
+
+**A stale ledger only guards ancient history, and that nearly shipped.**
+`sentinel record` was written as a separate command and nothing called it —
+found hours later, nine commits behind in one repo and thirteen in the other.
+The check kept passing, correctly: the recorded commit was still an ancestor.
+Which is exactly the failure. Force-push away the last five commits and a
+marker from thirty back is still an ancestor, so the control covered an
+intruder rewriting a whole branch and did not cover the accident that actually
+happens — a bad rebase of recent work. Both audit workflows now advance it,
+after the audit rather than before, and two tests pin the difference.
 
 **How strong it actually is.** The ledger lives in the repository it describes,
 so whoever can rewrite history can also forge the ledger. That makes it

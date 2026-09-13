@@ -140,6 +140,26 @@ jobs:
           gh workflow run improve.yml \
             || echo "::warning::Could not dispatch improve.yml; the scheduled pass will pick it up."
 
+      # ADVANCE THE HISTORY LEDGER, and only after a clean audit.
+      #
+      # THE HOLE THIS CLOSES. `_history_is_append_only` compares HEAD against
+      # the commit the ledger names. Left un-advanced the ledger ages, and a
+      # stale ledger only guards ANCIENT history: force-push away the last
+      # five commits and a marker from thirty commits back is still an
+      # ancestor, so the check passes and the rewrite goes unseen. Built
+      # 2026-09-13, found un-wired the same day — the recorded marker was nine
+      # commits behind by then, and the likeliest accident is exactly the one
+      # it had stopped covering.
+      #
+      # AFTER, NOT BEFORE. Recording is a separate command from auditing for
+      # this reason: a tool that updates the state it checks against, in the
+      # same breath, overwrites the evidence while looking at it. Gated on the
+      # audit having actually run — a crashed auditor must not be allowed to
+      # bless the current HEAD on its way out.
+      - name: Advance the history ledger
+        if: always() && (steps.audit.outputs.code == '0' || steps.audit.outputs.code == '1' || steps.audit.outputs.code == '2')
+        run: python -m sentinel.cli record .
+
       # The history is what `_recurring` and `_never_passed` read, so it has to
       # survive the runner. Committed rather than kept as an artifact: a plain
       # checkout must be able to read it, and artifacts expire.
@@ -158,7 +178,7 @@ jobs:
           # resolves to no account and can never be mistaken for a person.
           git config user.name  "sentinel audit bot"
           git config user.email "sentinel-audit-bot@users.noreply.github.com"
-          git add .audit-history
+          git add .audit-history .security
           git diff --cached --quiet && { echo "Nothing new to keep."; exit 0; }
           git commit -q -m "Audit history: $(date -u +%Y-%m-%dT%H:%MZ)"
           for attempt in 1 2 3; do

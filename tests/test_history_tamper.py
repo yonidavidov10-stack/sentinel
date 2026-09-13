@@ -149,3 +149,68 @@ def test_a_directory_that_is_not_a_repository_says_nothing(tmp_path):
     out = []
     security._history_is_append_only(_m(tmp_path), out)
     assert out == []
+
+
+# ── the hole found hours after the check was built ─────────────────────
+#
+# `sentinel record` existed and nothing called it, so the ledger sat nine
+# commits behind in one repo and thirteen in the other. The check kept passing,
+# and it was right to: the recorded commit was still an ancestor.
+#
+# But that is precisely the failure. Force-push away the last few commits and a
+# marker from thirty commits back is STILL an ancestor — so the control covered
+# an intruder rewriting a whole branch, and did not cover the accident that
+# actually happens to people, which is a bad rebase of recent work.
+#
+# A tamper detector is only as current as its marker.
+
+def _rewrite_recent(repo, keep_back=2):
+    """Drop the last `keep_back` commits and build different ones."""
+    git(repo, "reset", "--hard", "-q", f"HEAD~{keep_back}")
+    for n in range(keep_back):
+        (repo / f"replacement{n}.txt").write_text("x", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", f"replacement {n}")
+
+
+def _extend(repo, n=4):
+    for i in range(n):
+        (repo / f"later{i}.txt").write_text("x", encoding="utf-8")
+        git(repo, "add", "-A")
+        git(repo, "commit", "-qm", f"later {i}")
+
+
+def test_a_stale_ledger_misses_a_recent_rewrite(repo):
+    """Documents the hole, not the desired behaviour."""
+    _record(repo)                    # marker at commit 3
+    _extend(repo)                    # four more land on top
+    _rewrite_recent(repo)
+    assert _one(repo).verdict is Verdict.PASS, (
+        "the old marker survives the rewrite, so a stale ledger cannot see it")
+
+
+def test_a_current_ledger_catches_the_same_rewrite(repo):
+    _extend(repo)
+    _record(repo)                    # marker advanced to HEAD
+    _rewrite_recent(repo)
+    f = _one(repo)
+    assert f.verdict is Verdict.FAIL
+    assert "rewritten, not extended" in f.detail
+
+
+def test_the_audit_workflows_advance_the_ledger():
+    """A control nothing calls is a control that does not exist. Both audit
+    workflows must run `sentinel record` AND commit what it writes, or the
+    ledger ages and the check silently narrows to guarding ancient history."""
+    here = Path(__file__).resolve().parent.parent
+    checked = 0
+    for wf in (here / ".github" / "workflows" / "audit.yml",
+               here.parent / "שוק-ההון" / "stock-predictor"
+               / ".github" / "workflows" / "audit.yml"):
+        if not wf.is_file():
+            continue                 # the sibling project is not always present
+        text = wf.read_text(encoding="utf-8")
+        assert "sentinel.cli record" in text, f"{wf.parent.parent.parent.name} never advances the ledger"
+        assert ".security" in text, f"{wf.parent.parent.parent.name} records the ledger but never commits it"
+        checked += 1
+    assert checked, "no audit workflow was found to check"

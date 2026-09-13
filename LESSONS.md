@@ -119,6 +119,40 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L032 — A control nothing calls is a control that does not exist
+**Found** 2026-09-13, hours after building it · **status: closed**
+
+`_history_is_append_only` compares HEAD against a commit recorded in
+`.security/history.json`, and `sentinel record` writes that file. The check
+shipped. The recorder shipped. **Nothing ever called the recorder.**
+
+The ledger sat nine commits behind in one repo and thirteen in the other, and
+the check kept reporting PASS — correctly, which is what makes this worth
+writing down. The recorded commit really was still an ancestor.
+
+**That is precisely the failure.** Force-push away the last five commits and a
+marker from thirty commits back is still an ancestor. So the control covered an
+intruder rewriting an entire branch, and did NOT cover the accident that
+actually happens to people: a bad rebase of recent work. It had narrowed,
+silently, to guarding the case that never occurs.
+
+A green tick from a control nobody advances is the most expensive kind of
+false comfort, because everything about it looks right — the check runs, the
+file exists, the verdict is honest about what it compared.
+
+**Check:** both audit workflows now run `sentinel record` after the audit (never
+before: a tool that updates the state it checks against overwrites the evidence
+while looking at it), and commit the result.
+`test_the_audit_workflows_advance_the_ledger` reads the workflow files and
+fails if either stops calling it or stops committing what it writes. Two more
+tests pin the behaviour itself — a stale ledger missing a recent rewrite, and
+a current one catching the same rewrite.
+
+**The shape to look for elsewhere:** every piece of state a check compares
+against needs an owner that advances it. Ask, of any stored baseline, *what
+moves this, and when*. If the answer is "someone will remember", it is already
+stale.
+
 ## L031 — I set a question without checking whether it was already answered
 **Found** 2026-09-13, on the first pass through the section I had just written · **status: closed**
 
