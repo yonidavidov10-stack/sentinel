@@ -11,6 +11,17 @@ concurrency:
   group: tests-${{ github.ref }}
   cancel-in-progress: true
 
+# DECLARED, not inherited. Without this block a workflow takes the
+# repository-wide default — a setting nothing in the source records, and on
+# many repositories read AND WRITE across every scope. A job that only runs
+# tests would hold the right to rewrite the code it is testing.
+#
+# `contents: read` is everything this needs: check out, install, run. A
+# declared permission is reviewable in a diff; an inherited one changes under
+# you when someone edits a repository setting.
+permissions:
+  contents: read
+
 jobs:
   tests:
     runs-on: ubuntu-latest

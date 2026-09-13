@@ -19,7 +19,7 @@ from pathlib import Path
 
 from ..manifest import Manifest
 from ..verdict import CheckResult, Finding, Severity, Verdict
-from .base import run, timer
+from .base import run, timer, which
 
 NAME = "security"
 
@@ -798,6 +798,191 @@ def _history_holds_no_credential(m: Manifest, findings: list[Finding]) -> None:
                   "המבחין ל-[security].allow_patterns."))
 
 
+_PERMS_BLOCK = re.compile(r"^\s*permissions:\s*$|^\s*permissions:\s*\S", re.M)
+_WRITE_ALL = re.compile(r"permissions:\s*write-all", re.M)
+_PR_TARGET = re.compile(r"^\s*pull_request_target:", re.M)
+
+
+def _workflow_permissions_are_declared(m: Manifest,
+                                       findings: list[Finding]) -> None:
+    """Does each workflow say what it is allowed to do, or inherit whatever?
+
+    A WORKFLOW WITH NO `permissions:` BLOCK INHERITS THE REPOSITORY DEFAULT,
+    and that default is a repository-wide setting nothing in the source
+    records. On many repositories it is read AND WRITE across every scope —
+    contents, packages, issues, pull requests, deployments. A test workflow
+    that only needs to read code can be running with the right to rewrite it.
+
+    The danger is not that the default is necessarily wrong. It is that the
+    source does not say, so nobody reviewing a workflow can tell what it can
+    do, and a change to that setting silently re-permissions every workflow
+    that never declared.
+
+    Also flagged:
+      * `write-all`, which is the default made explicit and no better for it;
+      * `pull_request_target`, which runs with repository secrets against code
+        from a fork. Combined with checking out the pull request's head it is
+        the best-known way to hand an attacker a repository's secrets, and it
+        appears in no workflow here — which is why it is worth keeping checked.
+    """
+    title = "Every workflow declares what it is allowed to do"
+    title_he = "כל תהליך מצהיר מה מותר לו לעשות"
+
+    wf = m.root / ".github" / "workflows"
+    if not wf.is_dir():
+        return
+
+    silent, write_all, pr_target = [], [], []
+    total = 0
+    for f in sorted(wf.glob("*.y*ml")):
+        total += 1
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        if _WRITE_ALL.search(text):
+            write_all.append(f.name)
+        elif not _PERMS_BLOCK.search(text):
+            silent.append(f.name)
+        if _PR_TARGET.search(text):
+            pr_target.append(f.name)
+
+    if write_all or pr_target:
+        detail = []
+        if write_all:
+            detail.append(f"{len(write_all)} use `write-all`")
+        if pr_target:
+            detail.append(f"{len(pr_target)} use `pull_request_target`, which "
+                          f"runs with this repository's secrets against code "
+                          f"from a fork")
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL,
+            detail="; ".join(detail),
+            detail_he="תהליך משתמש ב-write-all או ב-pull_request_target",
+            evidence="\n".join(write_all + pr_target),
+            remedy="Replace `write-all` with the scopes actually needed. For "
+                   "`pull_request_target`, never check out the pull request's "
+                   "head — that is the combination that hands a fork the "
+                   "repository's secrets.",
+            remedy_he="החלף write-all בסקופים שבאמת נחוצים. עם "
+                      "pull_request_target אל תעשה checkout ל-head של ה-PR."))
+        return
+
+    if silent:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+            severity=Severity.HIGH,
+            detail=f"{len(silent)} of {total} workflow(s) declare no "
+                   f"`permissions:` at all, so they inherit a repository-wide "
+                   f"setting that nothing in the source records — often read "
+                   f"AND write across every scope",
+            detail_he=f"{len(silent)} מתוך {total} תהליכים לא מצהירים "
+                      f"permissions כלל, אז הם יורשים הגדרה ברמת הריפו ששום "
+                      f"דבר בקוד לא מתעד — לעתים קרובות קריאה וכתיבה בכל סקופ",
+            evidence="\n".join(silent),
+            remedy="Add a `permissions:` block naming only what the workflow "
+                   "needs — `contents: read` for one that only runs tests. A "
+                   "declared permission is reviewable in a diff; an inherited "
+                   "one changes under you when someone edits a repository "
+                   "setting.",
+            remedy_he="הוסף בלוק permissions שנוקב רק במה שהתהליך צריך — "
+                      "contents: read למי שרק מריץ בדיקות. הרשאה מוצהרת ניתנת "
+                      "לביקורת ב-diff; מוירשת משתנה מתחתיך."))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+        severity=Severity.HIGH,
+        detail=f"all {total} workflow(s) name their own scopes",
+        detail_he=f"כל {total} התהליכים נוקבים בסקופים שלהם"))
+
+
+def _visibility_matches_the_declaration(m: Manifest,
+                                        findings: list[Finding]) -> None:
+    """Is this repository as public as the project says it is?
+
+    A PRIVATE REPOSITORY MADE PUBLIC BY ACCIDENT IS SILENT AND TOTAL. Nothing
+    breaks, no test fails, no workflow turns red — the code, the history and
+    every secret ever committed to it are simply readable by everyone, and the
+    first sign is someone else finding them.
+
+    It cannot be checked from the source, because visibility is not IN the
+    source. So the project declares what it intends and this asks GitHub.
+
+    The asymmetry is deliberate: declared private and actually public is
+    CRITICAL, while declared public and actually private is a WARNING. One
+    exposes everything; the other just means a collaborator cannot read it.
+    """
+    title = "The repository is as public as this project says it is"
+    title_he = "הריפו ציבורי בדיוק כפי שהפרויקט מצהיר"
+
+    want = str(m.security.get("visibility") or "").strip().lower()
+    if not want:
+        return              # nothing declared, nothing to hold it to
+    if want not in ("public", "private", "internal"):
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail=f"the manifest declares visibility {want!r}, which is not "
+                   f"one of public/private/internal",
+            detail_he=f"המניפסט מצהיר על נראות {want!r} שאינה מוכרת",
+            remedy="Use `public`, `private` or `internal`.",
+            remedy_he="השתמש ב-public, private או internal."))
+        return
+
+    if not which("gh"):
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail=f"declared {want}, and without the `gh` CLI there is no way "
+                   f"to see what GitHub actually has",
+            detail_he=f"מוצהר {want}, ובלי gh אין דרך לראות מה ב-GitHub בפועל",
+            remedy="Install and authenticate the GitHub CLI.",
+            remedy_he="התקן ואמת את ה-CLI של GitHub."))
+        return
+
+    r = run("gh repo view --json visibility --jq .visibility", m.root,
+            timeout_s=60)
+    actual = r.stdout.strip().lower()
+    if not r.ok or not actual:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail=f"declared {want}, and GitHub could not be asked",
+            detail_he=f"מוצהר {want}, ולא הצלחתי לשאול את GitHub",
+            evidence=(r.error or r.output)[:200],
+            remedy="Check `gh auth status` and that this repo has a remote.",
+            remedy_he="בדוק gh auth status ושיש remote לריפו."))
+        return
+
+    if actual == want:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"declared {want}, and GitHub agrees",
+            detail_he=f"מוצהר {want}, ו-GitHub מסכים"))
+        return
+
+    exposed = want == "private" and actual == "public"
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.CRITICAL if exposed else Severity.MEDIUM,
+        detail=(f"declared {want}, and GitHub says {actual} — the code, the "
+                f"full history and every secret ever committed are readable by "
+                f"anyone" if exposed else
+                f"declared {want}, and GitHub says {actual}"),
+        detail_he=(f"מוצהר {want} ו-GitHub אומר {actual} — הקוד, כל ההיסטוריה "
+                   f"וכל סוד שאי פעם הוקמט קריאים לכל אחד" if exposed else
+                   f"מוצהר {want} ו-GitHub אומר {actual}"),
+        remedy=("Make it private again FIRST, then treat every credential this "
+                "repository has ever held as public and rotate it. History is "
+                "readable for as long as it is exposed, and clones taken "
+                "meanwhile keep it." if exposed else
+                "Either change the repository or change the declaration — but "
+                "decide which is right rather than making them agree."),
+        remedy_he=("החזר לפרטי קודם, ואז התייחס לכל אישור גישה שהריפו הזה אי "
+                   "פעם החזיק כאל ציבורי והחלף אותו." if exposed else
+                   "שנה את הריפו או את ההצהרה — אבל תחליט מה נכון.")))
+
+
 def _tracked_files(root: Path) -> tuple[list[Path], str]:
     """Files git actually carries. Returns ([], reason) when git cannot answer."""
     r = run("git ls-files -z", root, timeout_s=60)
@@ -947,7 +1132,9 @@ def check(m: Manifest) -> CheckResult:
         for step in (_actions_are_pinned, _no_untrusted_input_in_shell,
                      _irreplaceable_has_a_second_copy,
                      _history_is_append_only, _owner_commits_are_signed,
-                     _dependencies_are_pinned, _history_holds_no_credential):
+                     _dependencies_are_pinned, _history_holds_no_credential,
+                     _workflow_permissions_are_declared,
+                     _visibility_matches_the_declaration):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

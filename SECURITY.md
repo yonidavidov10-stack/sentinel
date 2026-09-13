@@ -185,6 +185,8 @@ marketing.
 | Nothing tracked that .gitignore claims to hide | both | built 2026-09-13 |
 | Dependencies pinned + dependabot watching | intrusion | **built 2026-09-13** |
 | No credential in git history, not just the tree | intrusion | **built 2026-09-13** |
+| Every workflow declares its permissions | intrusion | **built 2026-09-13** |
+| Repository visibility matches the declaration | intrusion | **built 2026-09-13** |
 
 ### History is append-only — what replaces branch protection
 
@@ -307,9 +309,32 @@ the same rate applies to what has not been examined yet.**
    platform. The largest remaining gap and the only one with a known answer.
 2. **A passphrase on the signing key**, or accept that anyone with the Mac can
    sign as the owner. One command: `ssh-keygen -p -f ~/.ssh/id_ed25519_signing`.
-3. **Check workflow permissions mechanically.** They were read once by eye on
-   2026-09-13 and found minimal. Nothing watches them.
-4. **Check repository visibility against a declaration.** A private repo made
-   public by accident would be silent and total, and nothing currently notices.
+3. ~~Check workflow permissions mechanically.~~ **DONE**, and reading them by
+   eye had missed something: three workflows declared no `permissions:` block
+   at all — two `tests.yml` and a `smoke.yml` — so they inherited a
+   repository-wide default that nothing in the source records, often read AND
+   write across every scope. A job that only runs tests may have held the right
+   to rewrite the code it was testing. All three now declare `contents: read`.
+   `write-all` and `pull_request_target` are checked too; neither appears here.
+4. ~~Check repository visibility against a declaration.~~ **DONE.** Visibility
+   is not in the source, so the project declares its intent and the audit asks
+   GitHub. Declared private and actually public is CRITICAL; the reverse is a
+   warning — one exposes everything, the other inconveniences a collaborator.
 
-Numbers 3 and 4 are cheap and unbuilt. That is the honest state.
+### Now the next four
+
+1. **Hash-pin the dependency tree.** Still the largest remaining gap and the
+   only one with a known answer.
+2. **A passphrase on the signing key.** One command:
+   `ssh-keygen -p -f ~/.ssh/id_ed25519_signing`.
+3. **Secret age.** Nothing knows how long a token has been in place. A
+   credential that has not rotated in a year is not a finding today and will
+   be one eventually.
+4. **The Mac itself.** Every control here assumes the laptop is not
+   compromised, and nothing checks that assumption — FileVault, screen lock,
+   what else can read `~/.ssh`. It is the largest unexamined surface left, and
+   the one this tool is least suited to examine.
+
+**Thirteen checks now run against every audited project.** The caveat above
+stands: eight of them were built in a single day, and a defect was found in
+half of those within hours of writing them.
