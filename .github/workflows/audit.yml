@@ -131,14 +131,35 @@ jobs:
       # ONLY FROM THE CRON RUN. This workflow is also triggered by the daemon
       # finishing, and letting THAT summon the daemon would loop forever:
       # improve → audit → improve. Gating on `schedule` breaks the cycle.
-      - name: Summon the daemon if a promise is broken
-        if: github.event_name == 'schedule' && steps.audit.outputs.code == '1'
+      # SUMMON THE DAEMON ON WHAT IT CAN ACTUALLY FIX.
+      #
+      # This used to gate on `exit == 1`, a promise BROKEN. Every UNKNOWN and
+      # every WARN exits 2 and woke nobody — so a finding could be reported
+      # every morning for a week while the one thing able to act on it was
+      # never told. The owner saw the same message daily and reasonably
+      # concluded the system only reports.
+      #
+      # `--should-fix` answers a different question, in the exit code: is there
+      # something here a pass could act on? A FAIL, yes, immediately. A WARN or
+      # UNKNOWN only once it has RECURRED and is still open — one report is
+      # information, five is a failure of the loop.
+      #
+      # And never for a finding marked `needs_owner`: rotating a credential,
+      # plugging in a drive, editing a workflow the pass may not touch. Waking
+      # it for work it is forbidden to do is how a fixing loop becomes an
+      # expensive reporting loop.
+      - name: Summon the daemon if there is something it can fix
+        if: github.event_name == 'schedule'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "::warning::A promise is broken — starting a self-improvement pass."
-          gh workflow run improve.yml \
-            || echo "::warning::Could not dispatch improve.yml; the scheduled pass will pick it up."
+          if python -m sentinel.cli run . --should-fix; then
+            echo "::warning::Something here a pass can act on — starting one."
+            gh workflow run improve.yml \
+              || echo "::warning::Could not dispatch improve.yml; the scheduled pass will pick it up."
+          else
+            echo "Nothing a pass could fix. The daemon keeps its schedule."
+          fi
 
       # ADVANCE THE HISTORY LEDGER, and only after a clean audit.
       #

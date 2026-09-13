@@ -163,6 +163,9 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
         counts.append(f"❓ {len(by_verdict[Verdict.UNKNOWN])} לא נבדקו")
     if by_verdict[Verdict.WARN]:
         counts.append(f"⚠️ {len(by_verdict[Verdict.WARN])} לתשומת לב")
+    mine = [f for f in actionable if f.needs_owner]
+    if mine:
+        counts.append(f"👤 {len(mine)} ממתינים לך")
     L.append(" · ".join(counts))
 
     titles = {Verdict.FAIL: "❌ נשבר", Verdict.UNKNOWN: "❓ לא נבדק",
@@ -196,6 +199,18 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
             remedy = f.say("remedy", "he")
             if remedy:
                 L.append(f"  ↳ {_esc(remedy)}")
+            # WHO IS GOING TO ACT ON THIS. Until 2026-09-13 every finding read
+            # the same, so a person could not tell which ones the daemon would
+            # take and which were waiting on them — and several waited for days
+            # because they looked like the rest.
+            #
+            # The daemon reaches source, tests and documentation. It cannot
+            # touch `.github/workflows/**` (a pass able to widen its own
+            # permissions is not a safety boundary), cannot rotate a
+            # credential, plug in a drive, change an account setting, or
+            # un-publish what is already public.
+            if f.needs_owner:
+                L.append("  👤 <i>ממתין לך — הדמון לא יכול לגעת בזה</i>")
 
     if by_verdict[Verdict.UNKNOWN]:
         L.append("")

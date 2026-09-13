@@ -177,6 +177,13 @@ def main(argv: list[str] | None = None) -> int:
                         "nothing wrong. Meant for one day a week: a bot that "
                         "only ever speaks about problems is indistinguishable "
                         "from a bot that has stopped running.")
+    r.add_argument(
+        "--should-fix", action="store_true",
+        help="print nothing and exit 0 only if a self-improvement pass could "
+             "act on something here: a broken promise, or a warning that has "
+             "recurred and is still open. Exits 1 when the right answer is to "
+             "leave it alone — including when the only findings need a person "
+             "(rotate a credential, plug in a drive, edit a workflow).")
 
     i = sub.add_parser("init", help="write a starter SENTINEL.toml")
     rec = sub.add_parser(
@@ -230,6 +237,15 @@ def main(argv: list[str] | None = None) -> int:
         text = "\n".join(to_terminal(a) for a in audits)
 
     print(text)
+
+    if getattr(args, "should_fix", False):
+        # A DECISION, NOT A REPORT, so it prints nothing and speaks in the exit
+        # code. The audit workflow was gating the daemon on `exit == 1`, which
+        # meant every UNKNOWN and every WARN woke nobody — a finding could be
+        # reported every morning for a week while the one thing able to act on
+        # it was never told.
+        from .report import daemon_should_act
+        return 0 if any(daemon_should_act(a) for a in audits) else 1
 
     if args.telegram and not _notify(audits, heartbeat=args.heartbeat):
         # 3: the audit ran, and its findings reached nobody. Distinct from 1

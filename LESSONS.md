@@ -119,6 +119,42 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L035 — The daemon was summoned on one verdict out of three
+**Found** 2026-09-13, from the owner: "it still only sends messages and does not fix the problems" · **status: closed**
+
+They were right, and the cause was one line in the audit workflow:
+
+```
+if: github.event_name == 'schedule' && steps.audit.outputs.code == '1'
+```
+
+Exit 1 means a promise is BROKEN. Every UNKNOWN and every WARN exits 2 and woke
+nobody. So the wiring built weeks ago to make this system fix rather than file
+was reaching one verdict out of three, and the message the owner pasted —
+two UNKNOWN and one WARN — summoned nothing at all.
+
+**An exit code could not express the question.** "Is anything broken" and "is
+there anything a pass could act on" are different, and the second is the one
+the gate needed.
+
+**Check:** `--should-fix` prints nothing and answers in its exit code. A FAIL
+acts now; an UNKNOWN acts once it has RECURRED and is still open — one "could
+not check" is information, five means nobody has made it checkable, which is
+squarely daemon work. A WARN never qualifies, and that is `history.recurring`'s
+existing judgement rather than a new one: it counts FAIL and UNKNOWN only,
+because a recurring warning is usually a deliberate "not now".
+
+**And the rule that keeps this from being worse than the bug:** `needs_owner`
+findings never summon anything. Rotating a credential, plugging in a drive,
+editing a workflow the pass is forbidden to touch — a pass woken for those
+looks, finds nothing it may change, and burns a run. Waking a daemon for work
+it cannot do is how a fixing loop becomes an expensive reporting loop.
+
+The report now says which is which, because the reader's real question is not
+"how bad is this" but "is anything going to happen, or is it waiting for me?"
+Until today every finding read the same, and several sat for days because they
+looked like the rest.
+
 ## L034 — A lock is resolved for one machine, and five CI runs said so
 **Found** 2026-09-13, hash-locking the dependency tree · **status: closed**
 

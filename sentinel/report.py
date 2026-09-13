@@ -165,3 +165,54 @@ def to_dict(audit: Audit) -> dict:
             for f in audit.findings
         ],
     }
+
+
+def daemon_should_act(audit) -> bool:
+    """Is there something here a self-improvement pass could actually fix?
+
+    THE GAP THIS CLOSES. The daemon was summoned only when a promise was
+    BROKEN — exit 1. Every UNKNOWN and every WARN exited 2 and woke nobody, so
+    a finding could be reported every morning for a week while the one thing
+    able to act on it was never told. The owner saw the same message daily and
+    reasonably concluded the system only reports.
+
+    Two conditions, and both matter:
+
+      * a FAIL is acted on immediately — a promise the project makes and no
+        longer keeps is the strongest signal available;
+      * an UNKNOWN is acted on ONLY ONCE IT RECURS. One "could not check" is
+        information; five mornings of the same one means nobody has made it
+        checkable, and making a check runnable is squarely daemon work.
+
+    A WARN never triggers on recurrence, and that is `history.recurring`'s
+    existing judgement rather than an oversight here: it counts FAIL and
+    UNKNOWN only, because a recurring warning is usually a deliberate "not
+    now". An untidy .gitignore reported daily is mildly annoying; it is not a
+    system failing to act, and summoning a pass for it would make it one.
+
+    AND NEVER FOR SOMETHING THE PASS CANNOT REACH. `needs_owner` findings —
+    rotate a credential, plug in a drive, edit a workflow, change an account
+    setting — would summon a pass that looks, finds nothing it may touch, and
+    burns a run. Waking the daemon for work it is forbidden to do is how a
+    fixing loop becomes an expensive reporting loop.
+    """
+    from .verdict import Verdict
+
+    from . import history
+
+    actionable = [f for f in audit.findings
+                  if f.verdict.is_actionable and not f.needs_owner]
+    if any(f.verdict is Verdict.FAIL for f in actionable):
+        return True
+
+    # A FAIL or UNKNOWN reported five mornings running and still open.
+    # `still_open` is what stops a finding fixed yesterday from summoning the
+    # daemon for another month out of the history file.
+    still_open = {(f.check, f.title) for f in actionable}
+    if not still_open:
+        return False
+    try:
+        return bool(history.recurring(audit.manifest.root, still_open=still_open))
+    except Exception:                                     # noqa: BLE001
+        # A history that cannot be read is not a reason to wake the daemon.
+        return False

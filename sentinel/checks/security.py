@@ -158,7 +158,8 @@ def _actions_are_pinned(m: Manifest, findings: list[Finding]) -> None:
                    "something has to update it.",
             remedy_he="החלף את התגית ב-SHA שהיא מצביעה אליו כרגע, עם הגרסה "
                       "בהערה. שים לב למחיר: פעולה מוצמדת מפסיקה לקבל עדכוני "
-                      "אבטחה, אז מישהו צריך לעדכן אותה."))
+                      "אבטחה, אז מישהו צריך לעדכן אותה.",
+        needs_owner=True))
         return
 
     findings.append(Finding(
@@ -174,7 +175,8 @@ def _actions_are_pinned(m: Manifest, findings: list[Finding]) -> None:
                "once, and write the decision down rather than leaving it to "
                "whoever edits the workflow next.",
         remedy_he="שווה להצמיד אם למשימות האלה יש סודות שחשובים. תחליט פעם "
-                  "אחת, ותכתוב את ההחלטה."))
+                  "אחת, ותכתוב את ההחלטה.",
+        needs_owner=True))
 
 
 def _no_untrusted_input_in_shell(m: Manifest, findings: list[Finding]) -> None:
@@ -240,7 +242,8 @@ def _no_untrusted_input_in_shell(m: Manifest, findings: list[Finding]) -> None:
                "the script. The shell then treats it as a value; interpolation "
                "makes it code.",
         remedy_he="העבר דרך env: והשתמש ב-\"$VAR\" בתוך הסקריפט. אז ה-shell "
-                  "מתייחס לזה כערך; הזרקה הופכת את זה לקוד."))
+                  "מתייחס לזה כערך; הזרקה הופכת את זה לקוד.",
+        needs_owner=True))
 
 
 def _irreplaceable_has_a_second_copy(m: Manifest,
@@ -311,7 +314,8 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
                    "format — it is a location a bad force-push cannot reach.",
             remedy_he="החלט איפה יושב עותק שני ורשום אותו כ-second_copy תחת "
                       "[security]. העיקר אינו הפורמט — אלא מקום שדחיפה כוחנית "
-                      "שגויה לא מגיעה אליו."))
+                      "שגויה לא מגיעה אליו.",
+        needs_owner=True))
         return
 
     # A second copy that is a PATH can be checked; one that is prose can only
@@ -351,7 +355,8 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
                    "days; it is reported rather than hidden because 'I could "
                    "not look' is not 'it is fine'.",
             remedy_he="חבר אותו והרץ שוב. זה צפוי ברוב הימים; זה מדווח ולא "
-                      "מוסתר כי 'לא יכולתי להסתכל' זה לא 'הכל בסדר'."))
+                      "מוסתר כי 'לא יכולתי להסתכל' זה לא 'הכל בסדר'.",
+        needs_owner=True))
         return
 
     entries = [d for d in dest.iterdir() if not d.name.startswith(".")]
@@ -527,7 +532,8 @@ def _history_is_append_only(m: Manifest, findings: list[Finding]) -> None:
         remedy_he="ברר מה קרה לפני כל דבר אחר — דחיפה כוחנית ידנית ותוקף "
                   "שמטשטש עקבות נראים כאן זהים. git reflog בכל שכפול שלא עשה "
                   "fetch מאז עדיין מחזיק את הקומיטים הישנים, וזו דרך השחזור. "
-                  "אל תעשה שם pull קודם."))
+                  "אל תעשה שם pull קודם.",
+        needs_owner=True))
 
 
 def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
@@ -625,7 +631,8 @@ def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
         remedy_he="הגדר commit.gpgsign true עם מפתח SSH, והעלה את המפתח "
                   "הציבורי ל-GitHub כמפתח חתימה — מפתח אימות הוא רשימה אחרת "
                   "ולא יאמת כלום. קומיטים שנעשו לפני ההגדרה לא ניתנים לתיקון "
-                  "והם יוצאים מהחלון מעצמם."))
+                  "והם יוצאים מהחלון מעצמם.",
+        needs_owner=True))
 
 
 def _dependencies_are_pinned(m: Manifest, findings: list[Finding]) -> None:
@@ -839,7 +846,8 @@ def _history_holds_no_credential(m: Manifest, findings: list[Finding]) -> None:
         remedy_he="החלף את האישור קודם. שכתוב היסטוריה משני ולעתים בלתי אפשרי — "
                   "כל שכפול קיים כבר מחזיק אותו. התייחס לכל מה שהגיע לקומיט "
                   "כאל ציבורי. אם זו דוקומנטציה שמצטטת צורה, הוסף את הטקסט "
-                  "המבחין ל-[security].allow_patterns."))
+                  "המבחין ל-[security].allow_patterns.",
+        needs_owner=True))
 
 
 _PERMS_BLOCK = re.compile(r"^\s*permissions:\s*$|^\s*permissions:\s*\S", re.M)
@@ -929,7 +937,8 @@ def _workflow_permissions_are_declared(m: Manifest,
                    "setting.",
             remedy_he="הוסף בלוק permissions שנוקב רק במה שהתהליך צריך — "
                       "contents: read למי שרק מריץ בדיקות. הרשאה מוצהרת ניתנת "
-                      "לביקורת ב-diff; מוירשת משתנה מתחתיך."))
+                      "לביקורת ב-diff; מוירשת משתנה מתחתיך.",
+        needs_owner=True))
         return
 
     findings.append(Finding(
@@ -1024,7 +1033,8 @@ def _visibility_matches_the_declaration(m: Manifest,
                 "decide which is right rather than making them agree."),
         remedy_he=("החזר לפרטי קודם, ואז התייחס לכל אישור גישה שהריפו הזה אי "
                    "פעם החזיק כאל ציבורי והחלף אותו." if exposed else
-                   "שנה את הריפו או את ההצהרה — אבל תחליט מה נכון.")))
+                   "שנה את הריפו או את ההצהרה — אבל תחליט מה נכון."),
+        needs_owner=True))
 
 
 def _tracked_files(root: Path) -> tuple[list[Path], str]:

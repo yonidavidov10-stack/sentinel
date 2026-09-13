@@ -190,6 +190,27 @@ def _ci_status(m: Manifest, findings: list[Finding]) -> None:
             check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
             verdict=Verdict.PASS, severity=Severity.MEDIUM,
             detail=f"{parts[1] if len(parts) > 1 else 'workflow'} succeeded"))
+    # A CANCELLED RUN IS NOT A FAILED RUN. Concurrency groups cancel a run the
+    # moment a newer one supersedes it, and `cancel-in-progress` makes that the
+    # normal outcome of pushing twice in a minute. Calling it a broken promise
+    # summons the self-improvement daemon to fix a run that was never wrong —
+    # and, worse, trains its reader that a red line here might mean nothing.
+    #
+    # Found 2026-09-13 when five pushes in a row left `cancelled` as the latest
+    # conclusion and the audit reported the project broken.
+    elif conclusion in ("cancelled", "skipped", "stale", "neutral"):
+        findings.append(Finding(
+            check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",
+            verdict=Verdict.UNKNOWN, severity=Severity.LOW,
+            detail=f"the latest run was '{conclusion}' — superseded or never "
+                   f"judged, so nothing here says whether the code is good",
+            detail_he=f"ההרצה האחרונה הייתה '{conclusion}' — הוחלפה או לא נשפטה, "
+                      f"אז שום דבר כאן לא אומר אם הקוד תקין",
+            evidence=r.stdout.strip(),
+            remedy="Usually a newer run took its place; look at that one. "
+                   "Nothing to fix unless it keeps happening.",
+            remedy_he="בדרך כלל ריצה חדשה יותר תפסה את מקומה; הסתכל עליה. "
+                      "אין מה לתקן אלא אם זה חוזר."))
     else:
         findings.append(Finding(
             check=NAME, title="The latest CI run is green", title_he="ההרצה האחרונה של ה-CI ירוקה",

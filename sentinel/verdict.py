@@ -73,6 +73,20 @@ class Finding:
     evidence: str = ""
     remedy: str = ""
 
+    # WHO CAN ACT ON THIS, and it is the question a reader actually has.
+    #
+    # The daemon fixes what it can reach: source, tests, documentation. It
+    # cannot touch `.github/workflows/**` — a pass able to widen its own
+    # permissions is not a safety boundary — and it cannot rotate a credential,
+    # plug in a drive, change a GitHub account setting or un-publish history.
+    #
+    # Until 2026-09-13 every finding looked identical in the report, so a
+    # person could not tell which ones were being handled and which were
+    # waiting on them. Several sat for days because they read like the others.
+    #
+    # True means: NOTHING WILL HAPPEN UNTIL A HUMAN ACTS.
+    needs_owner: bool = False
+
     # Hebrew renderings, used by the Telegram reporter. EXPLICIT FIELDS rather
     # than a lookup keyed on the English title: a translation table matched by
     # string breaks silently the moment someone rewords a title, and the report
