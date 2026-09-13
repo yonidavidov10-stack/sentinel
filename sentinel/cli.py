@@ -236,7 +236,14 @@ def main(argv: list[str] | None = None) -> int:
     else:
         text = "\n".join(to_terminal(a) for a in audits)
 
-    print(text)
+    # `--should-fix` is a DECISION, not a report, and the branch below has to
+    # come before this line to keep its own promise. The first version sat
+    # after it and printed the entire audit into a workflow step whose only
+    # job was to answer yes or no — the log showed a full report followed by
+    # "Nothing a pass could fix", which reads like the report caused the
+    # verdict. Documentation that contradicts the code is a defect in both.
+    if not getattr(args, "should_fix", False):
+        print(text)
 
     if getattr(args, "should_fix", False):
         # A DECISION, NOT A REPORT, so it prints nothing and speaks in the exit

@@ -183,3 +183,24 @@ def test_the_summon_step_can_be_exercised_on_demand():
             f"{wf}: gated on schedule, so the summon path cannot be tested"
         checked += 1
     assert checked, "no audit workflow found"
+
+
+def test_should_fix_prints_nothing(capsys, tmp_path, monkeypatch):
+    """A DECISION, NOT A REPORT. The first version sat after the print and
+    dumped the whole audit into a workflow step whose only job was to answer
+    yes or no — the log showed a full report followed by "Nothing a pass could
+    fix", which reads as though the report caused the verdict.
+
+    Documentation that contradicts the code is a defect in both, and this
+    flag's help text had promised silence since the hour it was written."""
+    from sentinel import cli
+
+    (tmp_path / "SENTINEL.toml").write_text(
+        '[project]\nname = "t"\npurpose = "p"\n\n'
+        '[[expectations]]\nid = "x"\nsays = "s"\nkind = "file_exists"\n'
+        'path = "README.md"\n', encoding="utf-8")
+    (tmp_path / "README.md").write_text("x", encoding="utf-8")
+
+    cli.main(["run", str(tmp_path), "--should-fix"])
+    assert capsys.readouterr().out == "", \
+        "the decision flag printed a report"
