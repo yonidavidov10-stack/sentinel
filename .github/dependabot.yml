@@ -1,0 +1,27 @@
+# WHAT MAKES PINNING SAFE.
+#
+# Every action is pinned to a commit SHA rather than a tag, because a tag is a
+# pointer its owner can move to any commit — which then runs inside a job
+# holding `contents: write` and every secret that job has.
+#
+# The cost of pinning is that security patches stop arriving on their own. A
+# pinned action stays exactly as it was, including its vulnerabilities, and
+# "we'll remember to update it" is not a control. This is the part that
+# remembers: Dependabot opens a pull request when a new version appears, with
+# the changelog attached, and the SHA is updated by a human reading it rather
+# than by a tag moving under us.
+#
+# Without this file, pinning makes things WORSE over time rather than better.
+
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      # Monday, so a PR is waiting at the start of a week rather than arriving
+      # on a Friday evening and sitting unread over a weekend.
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "actions"

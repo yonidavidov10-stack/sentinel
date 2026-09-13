@@ -107,11 +107,40 @@ def _actions_are_pinned(m: Manifest, findings: list[Finding]) -> None:
              else tagged_third).append(where)
 
     if not tagged_third and not tagged_first:
+        # PINNING WITHOUT AN UPDATE PATH MAKES THINGS WORSE, not better. A
+        # pinned action stays exactly as it was, including its
+        # vulnerabilities, and "we will remember to update it" is not a
+        # control — it is the absence of one, wearing the costume.
+        #
+        # So a fully pinned project only PASSES if something is watching for
+        # new versions. Otherwise the finding flips: the tags are gone and so
+        # is every future security patch.
+        dependabot = any((m.root / ".github" / n).is_file()
+                         for n in ("dependabot.yml", "dependabot.yaml"))
+        if dependabot:
+            findings.append(Finding(
+                check=NAME, title=title, title_he=title_he,
+                verdict=Verdict.PASS, severity=Severity.MEDIUM,
+                detail="every action is pinned to a commit SHA, and "
+                       "dependabot watches for new versions",
+                detail_he="כל פעולה מוצמדת ל-SHA, ו-dependabot עוקב אחרי "
+                          "גרסאות חדשות"))
+            return
         findings.append(Finding(
-            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
             severity=Severity.MEDIUM,
-            detail="every action is pinned to a commit SHA",
-            detail_he="כל פעולה מוצמדת ל-SHA של קומיט"))
+            detail="every action is pinned to a commit SHA, and nothing is "
+                   "watching for updates — so these versions, and their "
+                   "vulnerabilities, are now frozen indefinitely",
+            detail_he="כל פעולה מוצמדת ל-SHA, ושום דבר לא עוקב אחרי עדכונים — "
+                      "כלומר הגרסאות האלה, והפגיעויות שבהן, קפואות ללא הגבלה",
+            remedy="Add `.github/dependabot.yml` with the `github-actions` "
+                   "ecosystem. It opens a pull request when a new version "
+                   "appears, so the SHA is changed by a person reading a "
+                   "changelog instead of by a tag moving underneath.",
+            remedy_he="הוסף .github/dependabot.yml עם github-actions. הוא "
+                      "פותח PR כשיוצאת גרסה חדשה, כך שה-SHA משתנה על ידי אדם "
+                      "שקורא changelog ולא על ידי תגית שזזה מתחתיך."))
         return
 
     if tagged_third:
