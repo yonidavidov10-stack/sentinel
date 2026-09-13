@@ -119,7 +119,8 @@ marketing.
 | No shell injection from event data | intrusion | built 2026-09-13 |
 | Actions pinned to a commit | intrusion | measured, reported, **not applied** — see below |
 | History is append-only | both | built 2026-09-13 |
-| Irreplaceable data has a second copy | our own mistakes | checked; **no second copy exists** |
+| Irreplaceable data has a second copy | our own mistakes | **built, two layers, both verified by restoring** |
+| The archive keeps receiving | our own mistakes | built 2026-09-13 |
 | Manifest cannot shrink unnoticed | our own mistakes | built 2026-09-13 |
 | Nothing tracked that .gitignore claims to hide | both | built 2026-09-13 |
 
@@ -144,6 +145,37 @@ so whoever can rewrite history can also forge the ledger. That makes it
 complete against accident — the case with four days of evidence behind it — and
 partial against an attacker, who must know to forge it. Real tamper-evidence
 needs a witness outside the repository. Worth building; not what this is.
+
+### The two backup layers, and why there are two
+
+| | Layer 1 — archive repo | Layer 2 — external SSD |
+|---|---|---|
+| Runs | daily, automatic | monthly, by hand |
+| Force-push / bad rebase / corrupted book | ✅ | ✅ |
+| GitHub account compromised | ❌ same account | ✅ |
+| Credential it needs | deploy key, one repo | **none** |
+
+**The second layer is manual on purpose, and that is the whole design.**
+Automating a copy to anywhere off GitHub means storing a credential for the
+destination inside the thing being backed up from — which hands an attacker
+both at once and defeats the reason for having it. So the one control that
+covers an account compromise is the one a person performs, and
+`backup-reminder.yml` sends a note on the 15th of each month counting what is
+currently at stake.
+
+A deploy key rather than a token for layer 1: a fine-grained PAT still belongs
+to the account and must carry an expiry, which is a silent failure a year out.
+A deploy key belongs to one repository by construction — whoever steals it can
+write snapshots into an archive and nothing else.
+
+Both layers store a SQL dump, not a copy of the `.db`. A database file is
+opaque to git: undiffable, unmergeable, and a corrupted byte in the middle
+stays invisible until something reads that page.
+
+**And both are verified by RESTORING them**, not by checking they were written.
+Confirmed end to end on 2026-09-13: the archive was cloned from GitHub, its
+snapshot restored, 142 rows compared. A backup nobody has ever restored is not
+a backup — it is an untested belief about a file.
 
 ### On "make the code unviewable and unmodifiable by outsiders"
 
