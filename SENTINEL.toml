@@ -154,6 +154,11 @@ unknown_reason = "אין gh בסביבה הזו, אז אי אפשר לשאול �
 remedy_he = "התקן/הענק גישה ב-https://github.com/apps/claude — צריך לאשר את הריפו הזה בנפרד, גישה לריפו אחד לא עוברת לריפו חדש."
 
 [security]
+# Commits claiming this address must carry a signature. The automation commits
+# under its own names from runners that hold no key, so those are exempt — see
+# the check for what that does and does not cover.
+owner_email = "yonidavidov10@gmail.com"
+signing_lookback = 30
 # The code here regenerates; the LEDGER does not. LESSONS.md is twenty-seven
 # defects that each got past everything already in place, with what would have
 # caught them. Rewriting the tool from scratch would not recover one of them —

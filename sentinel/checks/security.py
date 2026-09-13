@@ -501,6 +501,104 @@ def _history_is_append_only(m: Manifest, findings: list[Finding]) -> None:
                   "אל תעשה שם pull קודם."))
 
 
+def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
+    """Are the commits that claim to be the owner's actually the owner's?
+
+    WHAT THIS BUYS, PRECISELY, because it is easy to oversell. Anyone with
+    write access can author a commit under any name and address they like —
+    `git commit --author` takes a string, and nothing verifies it. Signing is
+    what makes that forgery visible: a commit claiming to be the owner and
+    carrying no signature stands out from every one that does.
+
+    WHAT IT DOES NOT BUY. The automation commits under its own names —
+    "market-news bot", "sentinel audit bot", "claude[bot]" — from runners that
+    hold no key, so those commits are unsigned and must be exempt or this check
+    would fire on every scheduled run forever. Which means an attacker who
+    steals a workflow token simply commits as a bot and is not caught here.
+    What stands against THAT is the workflow definitions being in git and
+    `_history_is_append_only` noticing a rewrite. Signing narrows the hole; it
+    does not close it, and saying otherwise would be the more dangerous error.
+
+    The bar is the RECENT past, not all history. Commits made before signing
+    was set up cannot be signed retroactively, and a check that can never pass
+    is one people turn off.
+    """
+    title = "Commits attributed to the owner are signed"
+    title_he = "קומיטים שמיוחסים לבעלים חתומים"
+
+    if not (m.root / ".git").exists():
+        return
+    owner = str(m.security.get("owner_email") or "").strip()
+    if not owner:
+        return          # nothing declared, nothing to hold anyone to
+
+    look_back = int(m.security.get("signing_lookback", 30))
+    # QUOTED, and it has to be. `run` goes through a shell, so the `|`
+    # separators in this format string were read as PIPES: `git log --format=%H`
+    # piped into a command called `%G?`. The check reported "could not read the
+    # commit log" and was right about the symptom and wrong about the cause,
+    # which is the most expensive kind of error message.
+    r = run(f"git log -{look_back} --format='%H|%G?|%ae|%s'", m.root,
+            timeout_s=60, clip=False)
+    if not r.ok:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="could not read the commit log",
+            detail_he="לא הצלחתי לקרוא את יומן הקומיטים",
+            evidence=(r.error or r.output)[:200]))
+        return
+
+    unsigned = []
+    signed = 0
+    for line in r.stdout.splitlines():
+        parts = line.split("|", 3)
+        if len(parts) < 4:
+            continue
+        sha, status, email, subject = parts
+        if email.lower() != owner.lower():
+            continue                         # a bot, or someone else
+        # G good, U good-but-untrusted, X/Y/R expired or revoked — all of them
+        # mean a signature is PRESENT, which is the question here. N means none.
+        if status == "N":
+            unsigned.append(f"{sha[:9]} {subject[:70]}")
+        else:
+            signed += 1
+
+    if not unsigned:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.MEDIUM,
+            detail=f"{signed} of the last {look_back} commit(s) are the "
+                   f"owner's, and all carry a signature"
+                   if signed else
+                   f"none of the last {look_back} commits are the owner's — "
+                   f"nothing to verify",
+            detail_he=(f"{signed} מתוך {look_back} הקומיטים האחרונים הם של "
+                       f"הבעלים, וכולם חתומים") if signed else
+                      f"אף אחד מ-{look_back} הקומיטים האחרונים אינו של הבעלים"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+        severity=Severity.MEDIUM,
+        detail=f"{len(unsigned)} of the last {look_back} commit(s) claim the "
+               f"owner's address and carry no signature — indistinguishable "
+               f"from a forgery, whichever they are",
+        detail_he=f"{len(unsigned)} מתוך {look_back} הקומיטים האחרונים טוענים "
+                  f"לכתובת של הבעלים ואינם חתומים — לא ניתנים להבחנה מזיוף",
+        evidence="\n".join(unsigned[:8]),
+        remedy="`git config --global commit.gpgsign true` with an ssh signing "
+               "key, and upload the public key to GitHub as a SIGNING key — "
+               "an authentication key is a different list and will not verify "
+               "anything. Commits made before signing was set up cannot be "
+               "fixed; they age out of the window.",
+        remedy_he="הגדר commit.gpgsign true עם מפתח SSH, והעלה את המפתח "
+                  "הציבורי ל-GitHub כמפתח חתימה — מפתח אימות הוא רשימה אחרת "
+                  "ולא יאמת כלום. קומיטים שנעשו לפני ההגדרה לא ניתנים לתיקון "
+                  "והם יוצאים מהחלון מעצמם."))
+
+
 def _tracked_files(root: Path) -> tuple[list[Path], str]:
     """Files git actually carries. Returns ([], reason) when git cannot answer."""
     r = run("git ls-files -z", root, timeout_s=60)
@@ -649,7 +747,7 @@ def check(m: Manifest) -> CheckResult:
         # need different machinery.
         for step in (_actions_are_pinned, _no_untrusted_input_in_shell,
                      _irreplaceable_has_a_second_copy,
-                     _history_is_append_only):
+                     _history_is_append_only, _owner_commits_are_signed):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001
