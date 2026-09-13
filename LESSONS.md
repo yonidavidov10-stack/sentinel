@@ -119,6 +119,58 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L027 — Three mistakes of mine in one session, and what now catches each
+**Found** 2026-09-13, after the owner asked whether any of this could cause problems · **status: closed**
+
+Not defects in the system — defects in MY editing of it. Worth the same
+treatment, because a tool edited by an agent is only as safe as the checks that
+watch the agent.
+
+**1. A script deleted a table nobody asked it to delete.** Removing two
+expectations from stock-predictor's manifest, it cut from the first match to
+the END OF FILE and took `[security]` with it — including the allow-list that
+stops the credential scanner flagging documentation which quotes a token shape.
+
+No test caught it, and none could: the tests do not read the manifest. The
+audit caught it, in the same run, because a different check flipped PASS to
+FAIL. **That was luck, not coverage.**
+
+**Check:** `_manifest_shrank` compares the working manifest against the last
+committed one and names every expectation or config key that vanished. A WARN,
+not a FAIL — removing a promise the project no longer makes is often right.
+What must never happen is removing one WITHOUT NOTICING.
+
+**2. I said a fix protected both projects. It protected one.**
+stock-predictor's audit ran the reporter with `|| true`, which swallowed the
+new exit code 3 — "ran, found things, reached nobody". The `|| true` had a good
+documented reason for exits 1 and 2, and was silently wrong for a case that
+did not exist when it was written. Now a case statement: tolerate the audit's
+findings, never tolerate its silence.
+
+**3. Twelve .pyc files were tracked in a public repository.** `.gitignore`
+listed `__pycache__/` — added AFTER they were committed, and an ignore rule
+untracks nothing. Harmless here; the class is not. **The same sequence is how a
+`.env` gets published**: committed before the rule exists, then hidden by it,
+with `git status` — the one signal that would say so — silenced by the rule
+itself.
+
+**Check:** `_ignored_but_tracked`, via `git ls-files -i -c`.
+
+**And a fourth, inside the fix for the first.** The new check parsed the
+committed manifest through `run()`, whose default ELIDES THE MIDDLE of long
+output. It received a file with 3,185 characters replaced by a notice, failed
+to parse it, and reported the manifest as unreadable. The verdict was honest
+and the cause was entirely my own call.
+
+Corrupted input that still looks like text is the worst kind: every layer
+downstream behaves plausibly and the eventual error names the wrong thing.
+`run(clip=False)` now exists for reading rather than showing, with both
+behaviours pinned by tests.
+
+Every guard above is tested by REPRODUCING THE MISTAKE in a scratch
+repository. A guard verified only against the state it wants has never been
+shown to fire, which is the one thing a guard has to do.
+
 ## L026 — An undeclared model is an undeclared dependency
 **Found** 2026-09-12, auditing where a strong model was being spent needlessly · **status: closed**
 

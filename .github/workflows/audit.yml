@@ -1,0 +1,161 @@
+name: audit
+
+# THE AUDITOR HAD NOBODY AUDITING IT.
+#
+# Every project sentinel watches sends its findings to @Bugfixer_BS7bot. This
+# repository — the tool those findings come from — sent nothing. It checked
+# itself only inside the improvement pass, as a gate that blocks a bad commit,
+# which is useful and is not the same thing: a gate speaks to the pass, never
+# to a person.
+#
+# So for three days its own improvement pass failed on a missing credential and
+# the owner learned about it from a conversation, not from the bot. A tool whose
+# entire purpose is catching gaps in monitoring was the one thing not monitored.
+
+on:
+  # AFTER THE DAEMON, NOT BEFORE IT. The improvement pass edits this repository;
+  # auditing it beforehand inspects the version least likely to be broken. This
+  # is the same ordering stock-predictor learned the hard way, where an audit at
+  # 06:00 judged code the daemon rewrote at 06:40 and nobody heard about a
+  # breakage for twenty-three hours.
+  workflow_run:
+    workflows: ["Self-improvement pass"]
+    types: [completed]
+
+  # And on its own, so a day the pass never ran is still reported. 07:40 UTC is
+  # thirty minutes after improve.yml's 07:10 — nominally. Measured 2026-09-12,
+  # GitHub creates scheduled runs three-and-a-half to five hours late, applied
+  # unevenly, so this gap is an intention rather than a guarantee; the
+  # workflow_run trigger above is what actually holds the order.
+  schedule:
+    - cron: "40 7 * * *"
+
+  workflow_dispatch:
+
+concurrency:
+  group: audit
+  cancel-in-progress: false
+
+permissions:
+  contents: write     # to keep the audit history
+  actions: write      # to summon the daemon when something is really broken
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0        # the report names what the daemon changed
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install pytest
+
+      - name: Is today the heartbeat day?
+        id: hb
+        # A bot that only ever speaks about problems is indistinguishable from
+        # a bot that has stopped running. Once a week it says so explicitly.
+        run: |
+          if [ "$(date -u +%u)" = "7" ]; then
+            echo "flag=--heartbeat" >> "$GITHUB_OUTPUT"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+          fi
+
+      # THE TOOL AUDITS ITSELF, AND THAT IS THE DANGEROUS PART. Every other
+      # project gets sentinel as a throwaway checkout it cannot break. Here the
+      # thing being audited and the thing doing the auditing are one file tree,
+      # so a pass that breaks the tool also breaks its own alarm — and silence
+      # would read exactly like an all-clear.
+      #
+      # Hence `set +e` and the explicit outcome below: whether it ran at all is
+      # recorded separately from what it found.
+      - name: Audit itself, and report what is actionable
+        id: audit
+        env:
+          BUGFIXER_BOT_TOKEN: ${{ secrets.BUGFIXER_BOT_TOKEN }}
+          BUGFIXER_CHAT_IDS: ${{ secrets.BUGFIXER_CHAT_IDS }}
+          # Without this, `gh run list` cannot authenticate and the CI-status
+          # check reports UNKNOWN in every report — an unactionable line that
+          # trains its reader to skim past the section real unknowns live in.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          python -m sentinel.cli run . --telegram ${{ steps.hb.outputs.flag }}
+          CODE=$?
+          set -e
+          echo "code=$CODE" >> "$GITHUB_OUTPUT"
+          # 0 = nothing actionable, 1 = a promise is broken, 2 = something
+          # could not be checked, 3 = it ran and reached nobody. Anything else
+          # means the tool did not run at all: a crash, an import error, a
+          # syntax error a pass had just committed.
+          case "$CODE" in
+            0|1|2) echo "Audit ran (exit $CODE)." ;;
+            3)
+              # No Telegram message can report this one — the missing thing IS
+              # the ability to send. A red run is the only channel left.
+              echo "::error::The audit ran and reached nobody: BUGFIXER_BOT_TOKEN / BUGFIXER_CHAT_IDS are not set on this repository."
+              exit 1 ;;
+            *)     echo "::error::The auditor did not run (exit $CODE)." ;;
+          esac
+
+      # AN AUDIT THAT DID NOT RUN MUST NOT LOOK LIKE AN AUDIT THAT FOUND
+      # NOTHING. That distinction is the whole discipline of this tool, and it
+      # applies to the tool itself first. Sent directly with curl, because the
+      # module that formats and sends messages is part of what may be broken.
+      - name: Say so if the auditor could not run
+        if: always() && steps.audit.outputs.code != '0' && steps.audit.outputs.code != '1' && steps.audit.outputs.code != '2' && steps.audit.outputs.code != '3'
+        env:
+          TOKEN: ${{ secrets.BUGFIXER_BOT_TOKEN }}
+          CHATS: ${{ secrets.BUGFIXER_CHAT_IDS }}
+        run: |
+          [ -n "$TOKEN" ] && [ -n "$CHATS" ] || exit 0
+          for chat in ${CHATS//,/ }; do
+            curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+              --data-urlencode "chat_id=${chat}" \
+              --data-urlencode "parse_mode=HTML" \
+              --data-urlencode "text=🛠 <b>Bug Fixer</b>(sentinel)%0A%0A❗ <b>הבודק עצמו לא הצליח לרוץ.</b>%0A%0Aזו לא הודעה על ממצא — זו הודעה על כך שאי אפשר היה לבדוק כלום. סביר שפאס שיפור שבר את הכלי.%0A%0A${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+              -o /dev/null
+          done
+          exit 1
+
+      # FOUND AND FIXED, not found and filed. A broken promise found now would
+      # otherwise wait for tomorrow's pass; the daemon reads the audit before it
+      # does anything else, so a genuine ❌ summons it immediately.
+      #
+      # ONLY FROM THE CRON RUN. This workflow is also triggered by the daemon
+      # finishing, and letting THAT summon the daemon would loop forever:
+      # improve → audit → improve. Gating on `schedule` breaks the cycle.
+      - name: Summon the daemon if a promise is broken
+        if: github.event_name == 'schedule' && steps.audit.outputs.code == '1'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "::warning::A promise is broken — starting a self-improvement pass."
+          gh workflow run improve.yml \
+            || echo "::warning::Could not dispatch improve.yml; the scheduled pass will pick it up."
+
+      # The history is what `_recurring` and `_never_passed` read, so it has to
+      # survive the runner. Committed rather than kept as an artifact: a plain
+      # checkout must be able to read it, and artifacts expire.
+      - name: Keep what was sent
+        if: always()
+        run: |
+          [ -d .audit-history ] || exit 0
+          git config user.name  "sentinel audit bot"
+          git config user.email "yonidavidov10@gmail.com"
+          git add .audit-history
+          git diff --cached --quiet && { echo "Nothing new to keep."; exit 0; }
+          git commit -q -m "Audit history: $(date -u +%Y-%m-%dT%H:%MZ)"
+          for attempt in 1 2 3; do
+            git pull --rebase --autostash -q origin main && git push -q origin main && exit 0
+            sleep 10
+          done
+          # Losing one history entry is not worth failing the audit: the message
+          # already reached its reader, which is the part that matters.
+          echo "::warning::Could not push the audit history."

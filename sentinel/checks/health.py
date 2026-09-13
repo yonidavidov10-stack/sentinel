@@ -656,12 +656,149 @@ def _action_finding(offenders, title, title_he, total, remedy, remedy_he,
         remedy=remedy, remedy_he=remedy_he)
 
 
+def _ignored_but_tracked(m: Manifest, findings: list[Finding]) -> None:
+    """Files git is tracking that .gitignore says should be ignored.
+
+    THE CASE THAT PROMPTED IT was harmless and the class is not: twelve .pyc
+    files were tracked in this public repository. `.gitignore` listed
+    `__pycache__/` — but it was added AFTER they were committed, and ignore
+    rules do not untrack anything already staged. Every commit since carried
+    binary churn nobody looked at.
+
+    The same sequence is how a `.env` gets published. Someone commits it before
+    the ignore rule exists, adds the rule, sees a clean `git status`, and
+    believes the file is protected. It is in every clone from then on, and the
+    one signal that would have said so — `git status` — is exactly the one the
+    ignore rule silences.
+    """
+    title = "Nothing .gitignore claims to ignore is tracked anyway"
+    title_he = "שום דבר ש-.gitignore מתיימר להתעלם ממנו לא נמצא במעקב"
+
+    if not (m.root / ".git").exists():
+        return
+    r = run("git ls-files -i -c --exclude-standard", m.root, timeout_s=60)
+    if not r.ok:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="could not ask git which tracked files are ignored",
+            detail_he="לא הצלחתי לשאול את git אילו קבצים במעקב אמורים להיות מוסתרים",
+            evidence=(r.error or r.output)[:300],
+            remedy="Check that this is a git repository and `git` is on PATH.",
+            remedy_he="בדוק שזה ריפו git ושהפקודה git זמינה."))
+        return
+
+    tracked = [line for line in r.stdout.split("\n") if line.strip()]
+    if not tracked:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.MEDIUM,
+            detail="the ignore rules and the index agree",
+            detail_he="כללי ההתעלמות והאינדקס מסכימים"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+        severity=Severity.HIGH,
+        detail=f"{len(tracked)} tracked file(s) match an ignore rule — the rule "
+               f"was almost certainly added after they were committed, and does "
+               f"nothing for them",
+        detail_he=f"{len(tracked)} קבצים במעקב תואמים כלל התעלמות — הכלל כנראה "
+                  f"נוסף אחרי שהם כבר נכנסו, והוא לא עושה להם כלום",
+        evidence="\n".join(tracked[:10]),
+        remedy="`git rm --cached <path>` for each, then commit. Check what they "
+               "are first: this is the same sequence that publishes a .env — "
+               "committed before the rule existed, and hidden by it afterwards.",
+        remedy_he="הרץ git rm --cached על כל אחד ואז קומיט. בדוק קודם מה הם: "
+                  "זה בדיוק הרצף שמפרסם קובץ .env."))
+
+
+def _manifest_shrank(m: Manifest, findings: list[Finding]) -> None:
+    """Did this edit remove promises, or configuration, without saying so?
+
+    WRITTEN AFTER DOING IT. A script meant to delete two expectations cut to
+    the end of the file and took the whole `[security]` table with it —
+    including the allow-list that stops the credential scanner flagging
+    documentation which quotes a token shape.
+
+    No test noticed, and no test could: the tests do not read the manifest. The
+    audit noticed only indirectly, because a different check flipped from PASS
+    to FAIL in the same run. That was luck. This asks the question directly.
+
+    A WARNING, NOT A FAILURE. Removing an expectation is often right — a
+    promise the project no longer makes should not be checked. What must never
+    happen is removing one WITHOUT NOTICING, so this names what vanished and
+    leaves the judgement to whoever reads it.
+    """
+    title = "No promise or setting disappeared from the manifest unnoticed"
+    title_he = "שום הבטחה או הגדרה לא נעלמה מהמניפסט בלי שאף אחד שם לב"
+
+    if not (m.root / ".git").exists():
+        return
+    # clip=False: this is READ, not shown. The default elides the middle of
+    # long output, and a manifest with its middle removed is unparseable
+    # text that still looks like a manifest.
+    r = run(f"git show HEAD:{m.path.name}", m.root, timeout_s=60, clip=False)
+    if not r.ok:
+        return              # no committed version yet: nothing to compare
+
+    try:
+        import tomllib
+        was = tomllib.loads(r.stdout)
+    except Exception:       # noqa: BLE001
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="the committed manifest could not be parsed, so nothing "
+                   "could be compared against it",
+            detail_he="לא הצלחתי לפענח את המניפסט המקומיט, אז אין מול מה להשוות",
+            remedy="Check that the committed SENTINEL.toml is valid TOML.",
+            remedy_he="בדוק שה-SENTINEL.toml המקומיט תקין."))
+        return
+
+    gone_ids = ([str(e.get("id")) for e in (was.get("expectations") or [])
+                 if str(e.get("id")) not in {x.id for x in m.expectations}])
+    gone_keys = [f"[security].{k}" for k in (was.get("security") or {})
+                 if k not in m.security]
+    gone_keys += [f"[commands].{k}" for k in (was.get("commands") or {})
+                  if k not in m.commands]
+    gone = gone_ids + gone_keys
+
+    if not gone:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.MEDIUM,
+            detail=f"{len(m.expectations)} promise(s), none dropped since the "
+                   f"last commit",
+            detail_he=f"{len(m.expectations)} הבטחות, אף אחת לא נמחקה מאז "
+                      f"הקומיט האחרון"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+        severity=Severity.HIGH,
+        detail=f"{len(gone)} item(s) present in the committed manifest are "
+               f"missing from the working copy",
+        detail_he=f"{len(gone)} פריטים שקיימים במניפסט המקומיט חסרים בעותק העבודה",
+        evidence="\n".join(gone[:10]),
+        remedy="If the removal was deliberate, say so in the commit message "
+               "and this clears on the next run. If it was not — and a script "
+               "editing this file is the usual way it is not — restore it. "
+               "Deleting a promise is the one edit that makes a report look "
+               "better by checking less.",
+        remedy_he="אם המחיקה מכוונת, ציין זאת בהודעת הקומיט וזה יתנקה בריצה "
+                  "הבאה. אם לא — וסקריפט שעורך את הקובץ הוא הדרך הרגילה שזה "
+                  "קורה — שחזר. מחיקת הבטחה היא העריכה היחידה שמשפרת דוח על ידי "
+                  "בדיקה של פחות."))
+
+
 def check(m: Manifest) -> CheckResult:
     findings: list[Finding] = []
     with timer() as t:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
-        for step in (_tests, _ci, _ci_status, _secrets, _claude_action, _git,
+        for step in (_tests, _ci, _ci_status, _secrets, _claude_action,
+                     _ignored_but_tracked, _manifest_shrank, _git,
                      _recurring, _never_passed, _improvements):
             try:
                 step(m, findings)

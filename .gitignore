@@ -12,3 +12,8 @@ venv/
 .env
 *.pem
 secrets*
+
+# Tracked before this rule existed, and an ignore rule untracks nothing —
+# `git rm --cached` did that on 2026-09-13. `_ignored_but_tracked` now reports
+# the general case, because the same sequence is how a .env gets published.
+*.pyc

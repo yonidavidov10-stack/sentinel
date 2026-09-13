@@ -64,11 +64,22 @@ def _audit(root: Path, only: list[str] | None) -> Audit:
     return audit
 
 
-def _notify(audits: list[Audit], heartbeat: bool) -> None:
-    """Send what is actionable. Never changes the exit code.
+def _notify(audits: list[Audit], heartbeat: bool) -> bool:
+    """Send what is actionable. Returns False if it could not even try.
 
-    A failure to REPORT is not a failure of the audit, and letting it become
-    one would mean a Telegram outage marks a healthy project as broken.
+    A FAILURE TO DELIVER IS NOT A FAILURE OF THE AUDIT, and letting it become
+    one would mean a Telegram outage marks a healthy project as broken. So a
+    refused request, a timeout, a network blip: reported in the output, exit
+    code untouched.
+
+    A MISSING CONFIGURATION IS A DIFFERENT ANIMAL, and conflating the two was
+    a real hole. An outage resolves itself; credentials that were never set
+    never resolve. Every audit would run, find things, report them to nobody
+    and exit 0 — a workflow green for months while its only reader heard
+    nothing. That is the same shape as a step that warns and exits 0 after
+    failing at its job, which cost this project two delivered messages.
+
+    So: the caller raises the exit code when this returns False.
     """
     import os
 
@@ -79,9 +90,11 @@ def _notify(audits: list[Audit], heartbeat: bool) -> None:
     chats = [c.strip() for c in
              os.environ.get("BUGFIXER_CHAT_IDS", "").split(",") if c.strip()]
     if not token or not chats:
-        print("(--telegram: BUGFIXER_BOT_TOKEN / BUGFIXER_CHAT_IDS not set — "
-              "nothing sent)", file=sys.stderr)
-        return
+        print("--telegram was requested but BUGFIXER_BOT_TOKEN / "
+              "BUGFIXER_CHAT_IDS are not set. NOTHING WAS SENT, and nothing "
+              "will be until they are — this is not a transient failure.",
+              file=sys.stderr)
+        return False
 
     for audit in audits:
         message = telegram.format_audit(audit)
@@ -100,7 +113,7 @@ def _notify(audits: list[Audit], heartbeat: bool) -> None:
             note = history.record(audit, message)
             if note:
                 print(f"(history: {note})", file=sys.stderr)
-
+    return True
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sentinel", description=__doc__,
@@ -172,8 +185,11 @@ def main(argv: list[str] | None = None) -> int:
 
     print(text)
 
-    if args.telegram:
-        _notify(audits, heartbeat=args.heartbeat)
+    if args.telegram and not _notify(audits, heartbeat=args.heartbeat):
+        # 3: the audit ran, and its findings reached nobody. Distinct from 1
+        # (a promise is broken) and 2 (something could not be checked),
+        # because the thing to fix is the plumbing, not the project.
+        worst = max(worst, 3)
 
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

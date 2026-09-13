@@ -33,8 +33,21 @@ class Run:
 
 
 def run(command: str, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
-        env_extra: dict | None = None) -> Run:
+        env_extra: dict | None = None, clip: bool = True) -> Run:
     """Run a shell command in `cwd`.
+
+    `clip=True` (the default) ELIDES THE MIDDLE of long output. That is right
+    for everything this was built for — output here becomes a finding's
+    evidence, and a reader needs the beginning and the end, not four thousand
+    lines of pytest.
+
+    PASS `clip=False` WHEN YOU ARE READING DATA RATHER THAN SHOWING IT. A check
+    that parsed a committed SENTINEL.toml through the default silently received
+    a file with its middle replaced by "… [3185 chars elided] …", failed to
+    parse it, and reported that the manifest was unreadable. The verdict was
+    honest and the cause was entirely this function — corrupted input that
+    still looks like text is the worst kind, because every layer downstream
+    behaves plausibly.
 
     TRUST BOUNDARY, stated plainly: commands come from the audited project's own
     SENTINEL.toml, and are executed with this process's privileges. That is the
@@ -78,8 +91,9 @@ def run(command: str, cwd: Path, timeout_s: int = DEFAULT_TIMEOUT_S,
         return Run(ok=False, exit_code=None, stdout="", stderr="",
                    error=f"{type(e).__name__}: {e}")
 
+    keep = (lambda t: t or "") if not clip else _clip
     return Run(ok=p.returncode == 0, exit_code=p.returncode,
-               stdout=_clip(p.stdout), stderr=_clip(p.stderr))
+               stdout=keep(p.stdout), stderr=keep(p.stderr))
 
 
 def _clip(text: str) -> str:

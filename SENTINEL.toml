@@ -51,8 +51,18 @@ expect_stdout_contains = ["ok"]
 
 [[expectations]]
 id = "no-secrets-of-its-own"
-says = "The auditor holds no credentials, so it is safe to publish"
-why = "It is a public repository. Everything project-specific lives in each project's own SENTINEL.toml, in that project's private repo."
+says = "No credential is written into the auditor's source, so it is safe to publish"
+why = """
+It is a public repository, and the promise is about the SOURCE — not about the
+repository holding no secrets at all. It has GitHub Actions secrets, and gained
+two more when it started reporting on itself; those live in GitHub's store and
+never appear in a file.
+
+The original wording said "holds no credentials", which stopped being true the
+moment the first secret was set and would have read as a broken promise to
+anyone checking it by hand. What is actually forbidden — and what this checks —
+is a token-shaped literal committed into `sentinel/` or `tests/`.
+"""
 kind = "grep"
 severity = "critical"
 pattern = "\\d{8,10}:AA[\\w-]{30,}|sk-ant-[A-Za-z0-9_-]{20,}|gh[pousr]_[A-Za-z0-9]{30,}"
@@ -148,3 +158,28 @@ remedy_he = "התקן/הענק גישה ב-https://github.com/apps/claude — צ
 # them. Silenced by naming the marker rather than the whole file: a real
 # eval() added to security.py later would still be flagged.
 allow_patterns = ["executes whatever reaches it"]
+
+[[expectations]]
+id = "audit-runs-after-the-daemon"
+says = "The audit runs AFTER the self-improvement pass, not before it"
+says_he = "הביקורת רצה אחרי פאס השיפור, לא לפניו"
+why = """
+The pass edits this repository. Auditing beforehand inspects the version least
+likely to be broken, and a breakage introduced at 07:10 would go unreported
+until the next day.
+
+stock-predictor learned this the hard way: its audit was scheduled at 06:00
+"after the daily run", and the daemon rewrote code at 06:40. Both workflows
+were valid, both ran, both were green. The ORDER was wrong, and order is
+invisible unless something looks at it.
+
+Here the audit is triggered by `workflow_run` on the pass finishing, which is
+the stronger of the two ways to satisfy this — it follows the daemon rather
+than guessing at a clock that, measured on this account, runs hours late and
+unevenly.
+"""
+kind = "schedule_after"
+severity = "high"
+checker = "audit.yml"
+writer = "improve.yml"
+remedy = "Either trigger the audit from `workflow_run` on the pass, or give every one of its cron times a later hour than the pass's."

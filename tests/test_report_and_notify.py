@@ -7,6 +7,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sentinel.manifest import Manifest              # noqa: E402
+ROOT = Path(__file__).resolve().parent.parent
 from sentinel.report import Audit, to_dict, to_markdown, to_terminal  # noqa: E402
 from sentinel.notify import telegram                # noqa: E402
 from sentinel.verdict import CheckResult, Finding, Verdict  # noqa: E402
@@ -278,3 +279,39 @@ def test_a_low_severity_warning_stays_quiet():
                 severity=Severity.LOW, detail="d",
                 evidence="a.py\nb.py\nc.py")
     assert "a.py" not in telegram.format_audit(audit(w))
+
+
+# ── asked to report, and reached nobody ────────────────────────────────
+#
+# The distinction this encodes, which one exit code used to blur:
+#
+#   a Telegram outage      -> transient, resolves itself, must NOT mark a
+#                             healthy project broken
+#   credentials never set  -> permanent until a person acts, and every audit
+#                             until then runs, finds things, tells nobody and
+#                             exits 0
+#
+# The second is a workflow that stays green for months while its only reader
+# hears nothing — the same shape as a step that warns and exits 0 after
+# failing at its job, which cost this project two delivered messages.
+
+def test_telegram_without_credentials_exits_three(monkeypatch, tmp_path, capsys):
+    from sentinel import cli
+
+    monkeypatch.delenv("BUGFIXER_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("BUGFIXER_CHAT_IDS", raising=False)
+    code = cli.main(["run", str(ROOT), "--telegram", "--only", "intent"])
+    assert code == 3, "reaching nobody must not share an exit code with a clean audit"
+    err = capsys.readouterr().err
+    assert "NOTHING WAS SENT" in err
+    assert "not a transient failure" in err
+
+
+def test_the_same_audit_without_the_flag_does_not_exit_three(monkeypatch):
+    """Exit 3 is about a REQUEST that could not be honoured. A run that never
+    asked to send has nothing to report about reporting."""
+    from sentinel import cli
+
+    monkeypatch.delenv("BUGFIXER_BOT_TOKEN", raising=False)
+    monkeypatch.delenv("BUGFIXER_CHAT_IDS", raising=False)
+    assert cli.main(["run", str(ROOT), "--only", "intent"]) != 3
