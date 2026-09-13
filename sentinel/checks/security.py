@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..manifest import Manifest
@@ -284,11 +285,89 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
                       "שגויה לא מגיעה אליו."))
         return
 
+    # A second copy that is a PATH can be checked; one that is prose can only
+    # be taken on trust. Both are accepted, and they are not the same finding.
+    dest = Path(str(copies)).expanduser()
+    if not dest.is_absolute():
+        dest = m.root / dest
+    max_age = int(m.security.get("second_copy_max_age_days", 45))
+
+    if not any(ch in str(copies) for ch in "/\\"):
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"{len(declared)} irreplaceable path(s), second copy: "
+                   f"{copies} — described, not a path, so its freshness is "
+                   f"taken on trust",
+            detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור, עותק שני: "
+                      f"{copies} — מתואר ולא נתיב, אז הטריות שלו בהנחה"))
+        return
+
+    # AN UNPLUGGED DRIVE IS NOT A MISSING BACKUP. Reporting FAIL whenever the
+    # SSD is not connected would fire on most days, mean nothing on any of
+    # them, and teach its reader that this line is noise — which is how the one
+    # finding that matters gets skimmed past.
+    if not dest.exists():
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail=f"the second copy lives at {copies}, which is not reachable "
+                   f"from here — an external drive that is not plugged in "
+                   f"looks exactly like a backup that was never made, and this "
+                   f"cannot tell them apart",
+            detail_he=f"העותק השני נמצא ב-{copies}, שלא נגיש מכאן — כונן "
+                      f"חיצוני שלא מחובר נראה בדיוק כמו גיבוי שמעולם לא נעשה, "
+                      f"ואי אפשר להבחין ביניהם",
+            remedy="Connect it and re-run to confirm. This is expected most "
+                   "days; it is reported rather than hidden because 'I could "
+                   "not look' is not 'it is fine'.",
+            remedy_he="חבר אותו והרץ שוב. זה צפוי ברוב הימים; זה מדווח ולא "
+                      "מוסתר כי 'לא יכולתי להסתכל' זה לא 'הכל בסדר'."))
+        return
+
+    entries = [d for d in dest.iterdir() if not d.name.startswith(".")]
+    if not entries:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL,
+            detail=f"{copies} is reachable and empty — the destination exists "
+                   f"and holds nothing",
+            detail_he=f"{copies} נגיש וריק — היעד קיים ואין בו כלום",
+            remedy="Take a snapshot now. An empty backup directory is the one "
+                   "state worse than no directory, because it reads as "
+                   "configured.",
+            remedy_he="עשה תצלום עכשיו. תיקיית גיבוי ריקה היא המצב היחיד "
+                      "שגרוע מאין תיקייה, כי היא נראית מוגדרת."))
+        return
+
+    newest = max(entries, key=lambda d: d.stat().st_mtime)
+    age_days = (datetime.now(timezone.utc)
+                - datetime.fromtimestamp(newest.stat().st_mtime, timezone.utc)
+                ).days
+
+    if age_days > max_age:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.WARN,
+            severity=Severity.HIGH,
+            detail=f"the newest copy at {copies} is {age_days} days old, past "
+                   f"the {max_age} declared — everything since exists in one "
+                   f"place again",
+            detail_he=f"העותק החדש ביותר ב-{copies} בן {age_days} ימים, מעבר "
+                      f"ל-{max_age} שהוצהרו — כל מה שמאז קיים שוב במקום אחד",
+            evidence=f"newest: {newest.name}",
+            remedy="Take a fresh one. The gap between the last copy and now is "
+                   "exactly what would be lost.",
+            remedy_he="עשה חדש. הפער בין העותק האחרון לעכשיו הוא בדיוק מה "
+                      "שיאבד."))
+        return
+
     findings.append(Finding(
         check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
         severity=Severity.HIGH,
-        detail=f"{len(declared)} irreplaceable path(s), second copy: {copies}",
-        detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור, עותק שני: {copies}"))
+        detail=f"{len(declared)} irreplaceable path(s); newest copy at "
+               f"{copies} is {age_days} day(s) old ({newest.name})",
+        detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור; העותק החדש "
+                  f"ביותר ב-{copies} בן {age_days} ימים ({newest.name})"))
 
 
 LEDGER = ".security/history.json"
