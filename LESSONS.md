@@ -119,6 +119,44 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L034 — A lock is resolved for one machine, and five CI runs said so
+**Found** 2026-09-13, hash-locking the dependency tree · **status: closed**
+
+`requirements.lock` took five CI runs to install once. Four distinct failures,
+none of them reproducible locally, and the local environment is precisely why:
+the lock was generated on the machine that could not see any of them.
+
+| run | failure | what it meant |
+|---|---|---|
+| 1 | `audioop-lts` has no 3.12 build | resolved for ONE INTERPRETER |
+| 2 | `PyObjC requires macOS to build` | and ONE OPERATING SYSTEM |
+| 3 | `setuptools>=77.0.3` unpinned | a hand-added package hides its own tree |
+| 4 | `sympy>=1.13.3` unpinned | same shape — fix the class, not the instance |
+| 5 | — | passed |
+
+**Runs 3 and 4 are the ones worth keeping.** torch is excluded from the compile
+because pip-compile resolves it to the PyPI wheel and 2.5GB of CUDA the project
+cannot use. Excluding it hid its whole dependency tree as well, and
+`--require-hashes` rejects the entire file over any single unpinned
+requirement. Adding them one at a time would have cost one CI run per
+dependency and taught nothing after the first. All seven went in at once, read
+from `importlib.metadata.requires("torch")` rather than transcribed.
+
+**What pip did right, and it is the point of the exercise:** it refused
+everything over one loose requirement. A partial lock is not a weaker lock, it
+is no lock, and pip says so instead of installing most of it.
+
+**Check:** the dependency check now tells three states apart — pinned with no
+lock (PASS, a real improvement), locked and enforced (PASS), locked and
+enforced by nothing (WARN). That last is the same shape as [[L032]]: an
+artefact that exists, looks right, and protects nothing.
+
+**The rule this session keeps rediscovering, now with five data points:** THE
+PLACE A CHECK RUNS IS PART OF THE CHECK. `gh run list --limit 1` returned the
+run asking the question. A regex in POSIX meant something else than in Python.
+A lock built on macOS/3.14 described a machine that does not exist in CI. Every
+one passed locally.
+
 ## L033 — Two scanners claiming the same patterns, in different dialects
 **Found** 2026-09-13, on the first run of the history scanner · **status: closed**
 

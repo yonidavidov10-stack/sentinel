@@ -166,11 +166,11 @@ marketing.
   is the workflows being in git and the append-only history check.
 * **The improvement pass making the predictions worse.** Its five guards prove
   it did not lie about its work. They say nothing about whether it was right.
-* **A transitively compromised dependency.** Direct dependencies are pinned;
-  their dependencies are resolved fresh. Hash-pinning would close this and has
-  not been done.
-* **A compromised package index** serving a different artifact under a version
-  already pinned. Hashes are the answer; see above.
+* **A dependency compromised BEFORE the lock was generated.** The hashes pin
+  what was there on 2026-09-13; they prove nothing about whether it was already
+  malicious. Locking freezes a state, it does not vet one.
+* **Anything installed outside the lock.** `requirements-voice.txt` is not
+  hash-locked, and neither is anything a developer adds by hand on the Mac.
 * **Disk loss**, for any backup that lives only on this Mac.
 
 ---
@@ -328,8 +328,15 @@ the same rate applies to what has not been examined yet.**
 
 ### Now the next four
 
-1. **Hash-pin the dependency tree.** Still the largest remaining gap and the
-   only one with a known answer.
+1. ~~Hash-pin the dependency tree.~~ **DONE 2026-09-13**, and it took five CI
+   runs to install once — four distinct failures, none reproducible locally,
+   because the lock was generated on the machine that could not see them. A
+   lock is resolved for one interpreter, one operating system, and one set of
+   packages the resolver was actually shown. See L034.
+
+   57 packages, 1,169 hashes, `--require-hashes` in every workflow. torch stays
+   hand-added from PyTorch's CPU index with its seven dependencies listed
+   explicitly so the resolver can see them.
 2. ~~A passphrase on the signing key.~~ **DONE 2026-09-13**, with
    `~/.ssh/config` set to `UseKeychain yes` / `AddKeysToAgent yes` so it is
    typed once on this machine. Verified: the key refuses an empty passphrase,
