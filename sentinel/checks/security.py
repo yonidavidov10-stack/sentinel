@@ -12,6 +12,7 @@ with a low false-positive rate and a real consequence.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -290,6 +291,137 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
         detail_he=f"{len(declared)} נתיבים בלתי ניתנים לשחזור, עותק שני: {copies}"))
 
 
+LEDGER = ".security/history.json"
+
+
+def _history_is_append_only(m: Manifest, findings: list[Finding]) -> None:
+    """Has anything rewritten history since the last audit?
+
+    THE CONTROL THAT REPLACES BRANCH PROTECTION, which is not available here:
+    GitHub refuses `required_status_checks` and force-push blocking on a
+    private repository on a free plan, and these repositories hold a record
+    that cannot be recreated. Several unattended workflows carry
+    `contents: write`.
+
+    It serves both threats at once, which is rare and is why it was built
+    first. An intruder covering their tracks and an owner typing
+    `git push --force` on the wrong branch produce the same evidence: a commit
+    that used to be reachable from main no longer is.
+
+    HOW STRONG THIS ACTUALLY IS, stated plainly. The ledger lives in the
+    repository it describes, so anyone who can rewrite history can also rewrite
+    the ledger and leave no trace. That makes it:
+
+      * COMPLETE against accident — the overwhelmingly likely case, and the one
+        with four days of evidence behind it in this project;
+      * PARTIAL against an attacker — they must know to forge it, and the
+        forgery is itself a commit in a file whose only job is to be boring.
+
+    Real tamper-evidence needs a witness outside the repository. That is worth
+    building and is not what this is.
+    """
+    title = "Nothing has rewritten the history of this repository"
+    title_he = "שום דבר לא שכתב את ההיסטוריה של הריפו הזה"
+
+    if not (m.root / ".git").exists():
+        return
+
+    ledger = m.root / LEDGER
+    head = run("git rev-parse HEAD", m.root, timeout_s=30)
+    count = run("git rev-list --count HEAD", m.root, timeout_s=60)
+    if not head.ok or not count.ok:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail="could not read this repository's history",
+            detail_he="לא הצלחתי לקרוא את ההיסטוריה של הריפו",
+            evidence=(head.error or count.error or head.output)[:300],
+            remedy="Check that `git` is available and this is a repository.",
+            remedy_he="בדוק ש-git זמין ושזה ריפו."))
+        return
+
+    now_sha = head.stdout.strip()
+    now_count = int(count.stdout.strip() or 0)
+
+    if not ledger.is_file():
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail=f"no history ledger yet, so there is no earlier state to "
+                   f"compare against — the first audit can only record where "
+                   f"things stand ({now_count} commits)",
+            detail_he=f"אין עדיין יומן היסטוריה, אז אין מצב קודם להשוות אליו — "
+                      f"הביקורת הראשונה רק רושמת את המצב ({now_count} קומיטים)",
+            remedy=f"Run `python -m sentinel.cli record {m.root}` (or let the "
+                   f"audit workflow do it) to write {LEDGER}, then commit it.",
+            remedy_he=f"הרץ את פקודת הרישום כדי לכתוב {LEDGER}, ואז קומיט."))
+        return
+
+    try:
+        was = json.loads(ledger.read_text(encoding="utf-8"))
+        prev_sha = str(was["head"])
+        prev_count = int(was["count"])
+    except (OSError, ValueError, KeyError) as e:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail=f"the history ledger is unreadable: {type(e).__name__}",
+            detail_he=f"יומן ההיסטוריה לא קריא: {type(e).__name__}",
+            remedy="Repair or regenerate it. An unreadable ledger checks "
+                   "nothing, and is indistinguishable from a deleted one.",
+            remedy_he="תקן או צור מחדש. יומן לא קריא לא בודק כלום, והוא נראה "
+                      "בדיוק כמו יומן שנמחק."))
+        return
+
+    # THE QUESTION. Is the commit we last saw still reachable from HEAD? A
+    # normal push only ever adds; a rewrite orphans what was there.
+    reachable = run(f"git merge-base --is-ancestor {prev_sha} HEAD",
+                    m.root, timeout_s=60)
+
+    if reachable.exit_code == 0:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"the commit recorded last time is still in this history; "
+                   f"{now_count - prev_count} commit(s) added since",
+            detail_he=f"הקומיט שנרשם בפעם הקודמת עדיין בהיסטוריה; נוספו "
+                      f"{now_count - prev_count} קומיטים מאז"))
+        return
+
+    # `git merge-base --is-ancestor` exits 1 for "no" and 128 for "I cannot
+    # even look" — which happens once the orphaned commit has been garbage
+    # collected and there is nothing left to compare against. Both are the same
+    # verdict; only the wording differs, and the difference tells the reader
+    # whether the old commits are still recoverable locally.
+    #
+    # The exact message was read out of git rather than guessed at: it is
+    # "fatal: Not a valid commit name <sha>". Matching on a phrase invented
+    # from memory is how a branch like this quietly stops being reached.
+    unknown_object = (reachable.exit_code == 128
+                      or "not a valid commit" in reachable.output.lower())
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.CRITICAL,
+        detail="a commit that was on this branch at the last audit is no "
+               "longer reachable from it — history was rewritten, not extended"
+               + (" (the commit no longer exists at all)" if unknown_object
+                  else ""),
+        detail_he="קומיט שהיה על הענף בביקורת הקודמת כבר לא ניתן להגעה ממנו — "
+                  "ההיסטוריה שוכתבה, לא הורחבה"
+                  + (" (הקומיט כבר לא קיים בכלל)" if unknown_object else ""),
+        evidence=f"last seen: {prev_sha} ({prev_count} commits)\n"
+                 f"now:       {now_sha} ({now_count} commits)",
+        remedy="Find out which before doing anything else — a force-push by "
+               "hand and an intruder covering tracks look identical here. "
+               "`git reflog` on any clone that has not fetched since still "
+               "holds the old commits, and that clone is the recovery path. "
+               "Do NOT pull into it first.",
+        remedy_he="ברר מה קרה לפני כל דבר אחר — דחיפה כוחנית ידנית ותוקף "
+                  "שמטשטש עקבות נראים כאן זהים. git reflog בכל שכפול שלא עשה "
+                  "fetch מאז עדיין מחזיק את הקומיטים הישנים, וזו דרך השחזור. "
+                  "אל תעשה שם pull קודם."))
+
+
 def _tracked_files(root: Path) -> tuple[list[Path], str]:
     """Files git actually carries. Returns ([], reason) when git cannot answer."""
     r = run("git ls-files -z", root, timeout_s=60)
@@ -437,7 +569,8 @@ def check(m: Manifest) -> CheckResult:
         # destroying something we cannot rebuild. SECURITY.md says why they
         # need different machinery.
         for step in (_actions_are_pinned, _no_untrusted_input_in_shell,
-                     _irreplaceable_has_a_second_copy):
+                     _irreplaceable_has_a_second_copy,
+                     _history_is_append_only):
             try:
                 step(m, findings)
             except Exception as ex:                        # noqa: BLE001

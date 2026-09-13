@@ -111,6 +111,64 @@ marketing.
 
 ---
 
+## Controls built so far
+
+| Control | Threat | State |
+|---|---|---|
+| Secrets never committed | intrusion | 4 checks, in place before this |
+| No shell injection from event data | intrusion | built 2026-09-13 |
+| Actions pinned to a commit | intrusion | measured, reported, **not applied** — see below |
+| History is append-only | both | built 2026-09-13 |
+| Irreplaceable data has a second copy | our own mistakes | checked; **no second copy exists** |
+| Manifest cannot shrink unnoticed | our own mistakes | built 2026-09-13 |
+| Nothing tracked that .gitignore claims to hide | both | built 2026-09-13 |
+
+### History is append-only — what replaces branch protection
+
+GitHub refuses branch protection on a private repository on a free plan, and
+these repositories hold a record that cannot be recreated while several
+unattended workflows carry `contents: write`.
+
+So `sentinel record` writes `.security/history.json` — the commit this
+repository was last seen at — and every audit asks one question: **is that
+commit still reachable from HEAD?** A normal push only ever adds. A rewrite
+orphans what was there, and an intruder covering their tracks and an owner
+force-pushing the wrong branch leave identical evidence.
+
+Recording is a SEPARATE command from auditing, deliberately. An auditor that
+updates the state it checks against, in the same breath, cannot report a
+problem — it would overwrite the evidence while looking at it.
+
+**How strong it actually is.** The ledger lives in the repository it describes,
+so whoever can rewrite history can also forge the ledger. That makes it
+complete against accident — the case with four days of evidence behind it — and
+partial against an attacker, who must know to forge it. Real tamper-evidence
+needs a witness outside the repository. Worth building; not what this is.
+
+### On "make the code unviewable and unmodifiable by outsiders"
+
+Measured rather than assumed:
+
+* `stock-predictor` — **private**
+* `fundamental-engine` — **private**
+* `sentinel` — **public, deliberately.** It holds no project-specific anything,
+  and being public is what lets every project pull it as a plain checkout.
+
+So "unviewable" is already true where it matters. The perimeter is not the
+repository setting — it is the GitHub account, and every control below it is
+downstream of that account staying uncompromised. What actually raises the
+floor, in order of value:
+
+1. **A second copy of what cannot be recreated**, somewhere a bad push cannot
+   reach. Still the top item, still undecided.
+2. **Two-factor on the GitHub account**, if it is not already on. Everything
+   here rests on it.
+3. **Pinning actions to SHAs**, accepting that something must then update them.
+4. **Signed commits**, so a forged commit is distinguishable from a real one.
+   Currently nothing here would tell the difference.
+
+None of these is blocked by anything except a decision.
+
 ## Status
 
 This is a foundation. The threat model above is measured; the controls are

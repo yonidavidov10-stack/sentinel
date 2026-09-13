@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from . import manifest as mf
@@ -115,6 +116,43 @@ def _notify(audits: list[Audit], heartbeat: bool) -> bool:
                 print(f"(history: {note})", file=sys.stderr)
     return True
 
+def _record_history(root: Path) -> int:
+    """Write the history ledger `_history_is_append_only` reads next time.
+
+    Deliberately a SEPARATE command from `run`. An auditor that updates the
+    state it checks against, in the same breath, cannot report a problem: it
+    would overwrite the evidence while looking at it. Recording happens after
+    a clean audit, by whoever decided the state is one worth remembering.
+    """
+    import json
+    import subprocess
+
+    from .checks.security import LEDGER
+
+    def git(*args: str) -> str:
+        return subprocess.run(("git",) + args, cwd=str(root), text=True,
+                              capture_output=True).stdout.strip()
+
+    head = git("rev-parse", "HEAD")
+    if not head:
+        print(f"{root}: not a git repository, or no commits yet.",
+              file=sys.stderr)
+        return 2
+
+    out = root / LEDGER
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({
+        "head": head,
+        "count": int(git("rev-list", "--count", "HEAD") or 0),
+        "at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "note": "Written by `sentinel record`. If a later audit says history "
+                "was rewritten, this is the commit it expected to still find.",
+    }, indent=2) + "\n", encoding="utf-8")
+    print(f"Recorded {head[:12]} in {out.relative_to(root)}.")
+    return 0
+
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="sentinel", description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -141,9 +179,17 @@ def main(argv: list[str] | None = None) -> int:
                         "from a bot that has stopped running.")
 
     i = sub.add_parser("init", help="write a starter SENTINEL.toml")
+    rec = sub.add_parser(
+        "record",
+        help="record this repository's HEAD, so a later audit can tell "
+             "whether history was rewritten rather than extended")
+    rec.add_argument("path", nargs="?", default=".", type=Path)
     i.add_argument("path", nargs="?", default=".")
 
     args = ap.parse_args(argv)
+
+    if args.cmd == "record":
+        return _record_history(Path(args.path).resolve())
 
     if args.cmd == "init":
         root = Path(args.path).resolve()

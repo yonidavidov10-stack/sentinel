@@ -119,6 +119,32 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L029 — A prompt pointed at a section that did not exist, for two weeks
+**Found** 2026-09-13, explaining to the owner what the improvement pass does · **status: closed**
+
+The improvement prompt says, in these words: *"WHERE THE OPEN QUESTIONS LIVE:
+the end of COWORK.md"*. That section did not exist. Every pass was sent to an
+empty destination and filled the gap with whatever the audit happened to be
+reporting.
+
+The result, counted rather than guessed: over a fortnight, nineteen edits to
+COWORK.md, eighteen to tests, five to notify — against **three** to the model
+and **one** to the screener. Every pass worked on plumbing. None worked on
+whether the system predicts well, which is the only thing it exists to do.
+
+Nothing caught it because **nothing connects a prompt to the file it
+references.** A prompt is documentation that steers an autonomous agent, and
+documentation that lies to an agent is worse than documentation that lies to a
+person — the person notices the heading is missing.
+
+**Check:** `the-passes-open-questions-section-exists` greps COWORK.md for the
+heading. Verified by renaming the heading and watching it fail.
+
+The section is written now, with one question at the top and a rule that a
+pass which answers it must replace it. Two questions were previously hardcoded
+in the prompt, both answered within a day, after which the prompt steered
+passes at settled work for a week — the same failure in the other direction.
+
 ## L028 — The injection check passed on a workflow written to be vulnerable
 **Found** 2026-09-13, in the first hour of the security foundation · **status: closed**
 
