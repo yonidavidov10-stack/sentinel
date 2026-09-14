@@ -207,19 +207,30 @@ def test_a_failed_run_that_died_of_something_else_is_unknown(
     assert findings[0].verdict is Verdict.UNKNOWN
 
 
-def test_a_green_latest_run_is_still_unknown_not_a_pass(
-        tmp_path, monkeypatch):
-    """The distinction this whole tool rests on. "The last run did not fail"
-    is not "the secrets are set" — it is "nothing contradicts it", and folding
-    the two together is how an auditor becomes worse than none."""
+def test_a_green_latest_run_is_skip_not_a_pass(tmp_path, monkeypatch):
+    """SKIP, and the change from UNKNOWN was deliberate.
+
+    UNKNOWN means "this applies here and I could not check it" — actionable,
+    because something is unverified. SKIP means "this does not apply here",
+    which is a decision rather than an omission.
+
+    Listing secrets needs repository admin, and a workflow token structurally
+    cannot have it. Reported as UNKNOWN it was permanently unanswerable: six
+    audits, zero passes, and sentinel's own `_never_passed` warning flagged it
+    as a check asking a question that cannot be answered where it runs. An
+    unactionable line in every report teaches its reader to skim the section
+    the real unknowns live in.
+
+    What must never change: it is not a PASS. Nothing here verified anything.
+    """
     seq = _Seq((False, "HTTP 403"), (True, ""))
     monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
     monkeypatch.setattr(health, "run", seq)
     findings = []
     health._secrets(_project(tmp_path, WORKFLOW), findings)
     f = findings[0]
-    assert f.verdict is Verdict.UNKNOWN
-    assert f.verdict.is_actionable, "an unchecked promise must stay visible"
+    assert f.verdict is Verdict.SKIP
+    assert f.verdict is not Verdict.PASS, "silence must never read as verified"
 
 
 def test_the_app_grant_error_is_recognised_too(tmp_path, monkeypatch):

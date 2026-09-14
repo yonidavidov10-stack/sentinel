@@ -524,20 +524,30 @@ def _secrets_from_run_history(m: Manifest, findings: list[Finding],
             "--jq '.[0] | select(.conclusion == \"failure\") | .databaseId'",
             m.root, timeout_s=60)
     if r.ok and not r.stdout.strip():
+        # SKIP, NOT UNKNOWN, and the difference is the whole discipline.
+        #
+        # UNKNOWN means "this applies here and I could not check it" — it stays
+        # actionable, because something is unverified. SKIP means "this does not
+        # apply here at all", which is a decision rather than an omission.
+        #
+        # Listing secrets needs repository admin, and the token inside Actions
+        # structurally cannot have it. Reporting UNKNOWN made this permanently
+        # unanswerable: six runs, zero passes, and `_never_passed` correctly
+        # flagged it as a check asking a question that cannot be answered where
+        # it runs. An unactionable line in every report teaches its reader to
+        # skim the section the real unknowns live in.
+        #
+        # It still checks properly from a laptop whose gh is authenticated as
+        # the owner, which is where the answer exists.
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he,
-            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
-            detail="the secret list needs repository admin, which this token "
-                   "does not have; the latest run did not fail, so nothing "
-                   "contradicts the secrets being set — which is not the same "
-                   "as having checked them",
-            detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן הזה; ההרצה "
-                      "האחרונה לא נכשלה, אז שום דבר לא סותר שהסודות מוגדרים — "
-                      "וזה לא אותו דבר כמו לבדוק אותם",
-            evidence=why_not[:300],
-            remedy="Run the audit from a machine whose `gh` is authenticated "
-                   "as the repository owner to check this properly.",
-            remedy_he="הרץ את הביקורת ממכונה שה-gh שלה מאומת כבעל הריפו."))
+            verdict=Verdict.SKIP, severity=Severity.MEDIUM,
+            detail="listing secrets needs repository admin, which a workflow "
+                   "token cannot have — this is checkable from the owner's "
+                   "machine, not from inside CI",
+            detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן של תהליך — "
+                      "זה ניתן לבדיקה מהמחשב של הבעלים, לא מתוך CI",
+            evidence=why_not[:300]))
         return
     if not r.ok or not r.stdout.strip():
         findings.append(Finding(

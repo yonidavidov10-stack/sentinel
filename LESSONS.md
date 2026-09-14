@@ -119,6 +119,50 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L037 — SKIP is the answer when a check cannot apply where it runs
+**Found** 2026-09-15, from the bot's own report · **status: closed**
+
+The daily message carried this, unprompted:
+
+> 2 בדיקות מעולם לא עברו — החשד הוא על הבדיקה, לא על הפרויקט
+> · כל סוד שהתהליכים מבקשים — 6 הרצות, אפס מעברים
+> · שני התהליכים שדוחפים ל-main — 8 הרצות, אפס מעברים
+
+`_never_passed` was right about both, and both were mine, written three days
+earlier.
+
+**The secrets check needs repository admin, and a workflow token structurally
+cannot have it.** Reported as UNKNOWN it was permanently unanswerable — an
+unactionable line in every single report, which teaches its reader to skim the
+section the real unknowns live in. That is not vigilance, it is decay.
+
+SKIP is the honest verdict: *this does not apply here.* A decision, not an
+omission. It still checks properly from a laptop whose `gh` is the owner's,
+which is where the answer exists. **What must never change is that it is not a
+PASS** — silence still never reads as verified.
+
+**The archive check asked GitHub about a PRIVATE repository using a token
+scoped to a different one.** "Not Found", every run. Fixed by moving the fact
+into the repository that needs it: `daily.yml` writes a marker AFTER the push
+succeeds. A marker written before would record an intention.
+
+**The third was not broken, only young** — two overlapping days where three are
+needed. "Not enough data yet" and "cannot be checked here" both exit 3, and a
+reader who cannot tell them apart eventually treats every UNKNOWN as noise. The
+message now says which.
+
+**And a false alarm that fooled me.** `check_archive_gap` reported a day
+missing; the row was in `origin/main` and this clone had not fetched. From a
+stale checkout the message is indistinguishable from a real loss. It now
+refuses to judge while behind the remote — in CI the checkout is always fresh,
+so this guard exists purely for the laptop, where being behind is normal and
+invisible.
+
+**What this session is really evidence of:** the bot caught three defects in
+its own auditor and one in its author, and it did so by reporting that its
+checks never pass. A tool that measures its own checks is the only kind that
+can tell you the measurement is broken.
+
 ## L036 — The error path had never run, and it was broken
 **Found** 2026-09-13, by a test that was about something else · **status: closed**
 
