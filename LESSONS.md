@@ -158,6 +158,16 @@ refuses to judge while behind the remote — in CI the checkout is always fresh,
 so this guard exists purely for the laptop, where being behind is normal and
 invisible.
 
+**Check:** `_never_passed` — which already existed and did the whole job here.
+It flagged both, by name, with their run counts, in a message nobody had to go
+looking for. Nothing new was needed to catch this class; what was needed was
+reading what it said instead of assuming the checks were fine because they were
+recent.
+
+`test_a_green_latest_run_is_skip_not_a_pass` pins the new verdict and, more
+importantly, pins that it is still not a PASS — the failure mode a SKIP could
+introduce is silence reading as verification.
+
 **What this session is really evidence of:** the bot caught three defects in
 its own auditor and one in its author, and it did so by reporting that its
 checks never pass. A tool that measures its own checks is the only kind that
