@@ -163,6 +163,9 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
         counts.append(f"❓ {len(by_verdict[Verdict.UNKNOWN])} לא נבדקו")
     if by_verdict[Verdict.WARN]:
         counts.append(f"⚠️ {len(by_verdict[Verdict.WARN])} לתשומת לב")
+    sec = [f for f in actionable if f.check == "security"]
+    if sec:
+        counts.append(f"🔒 {len(sec)} אבטחה")
     mine = [f for f in actionable if f.needs_owner]
     if mine:
         counts.append(f"👤 {len(mine)} ממתינים לך")
@@ -179,7 +182,13 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
         L.append(f"<b>{titles[verdict]}</b>")
         for f in items:
             L.append("")
-            L.append(f"• <b>{_esc(f.say('title', 'he'))}</b>")
+            # SECURITY FINDINGS ARE MARKED, because a reader scanning a
+            # mixed list cannot tell "the schedule drifted" from "a credential
+            # is readable". Thirteen of these run every audit and they arrive
+            # interleaved with everything else; the shield is the cheapest
+            # possible way to say which kind of problem this is.
+            mark = "🔒 " if f.check == "security" else ""
+            L.append(f"• {mark}<b>{_esc(f.say('title', 'he'))}</b>")
             detail = f.say("detail", "he")
             if detail:
                 L.append(f"  {_esc(detail)}")

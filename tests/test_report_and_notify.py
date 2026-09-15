@@ -10,7 +10,7 @@ from sentinel.manifest import Manifest              # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 from sentinel.report import Audit, to_dict, to_markdown, to_terminal  # noqa: E402
 from sentinel.notify import telegram                # noqa: E402
-from sentinel.verdict import CheckResult, Finding, Verdict  # noqa: E402
+from sentinel.verdict import CheckResult, Finding, Severity, Verdict  # noqa: E402
 
 
 def audit(*findings) -> Audit:
@@ -315,3 +315,56 @@ def test_the_same_audit_without_the_flag_does_not_exit_three(monkeypatch):
     monkeypatch.delenv("BUGFIXER_BOT_TOKEN", raising=False)
     monkeypatch.delenv("BUGFIXER_CHAT_IDS", raising=False)
     assert cli.main(["run", str(ROOT), "--only", "intent"]) != 3
+
+
+# ── a security finding must be legible AS a security finding ───────────
+
+def _mixed_audit():
+    """One security finding and one that is not, both actionable."""
+    from sentinel.manifest import Manifest
+    from sentinel.report import Audit
+
+    return Audit(
+        manifest=Manifest(path=ROOT / "SENTINEL.toml", name="p", purpose="x"),
+        results=[CheckResult(name="mixed", findings=[
+            Finding(check="security", title="A credential is readable",
+                    title_he="אישור גישה קריא", verdict=Verdict.FAIL,
+                    severity=Severity.CRITICAL, detail="d", detail_he="פ",
+                    evidence="e"),
+            Finding(check="health", title="The schedule drifted",
+                    title_he="לוח הזמנים נסחף", verdict=Verdict.WARN,
+                    severity=Severity.LOW, detail="d", detail_he="פ"),
+        ])])
+
+
+def test_security_findings_are_marked_in_the_body():
+    """A reader scanning a mixed list cannot tell "the schedule drifted" from
+    "a credential is readable". Thirteen security checks run every audit and
+    arrive interleaved with everything else."""
+    msg = telegram.format_audit(_mixed_audit())
+    assert "🔒" in msg
+    sec_line = next(l for l in msg.splitlines() if "אישור גישה קריא" in l)
+    other_line = next(l for l in msg.splitlines() if "לוח הזמנים נסחף" in l)
+    assert "🔒" in sec_line
+    assert "🔒" not in other_line, "the mark must distinguish, not decorate"
+
+
+def test_the_summary_line_counts_security_separately():
+    msg = telegram.format_audit(_mixed_audit())
+    assert "🔒 1 אבטחה" in msg.splitlines()[2]
+
+
+def test_a_report_with_no_security_findings_says_nothing_about_security():
+    """A permanent "0 security" would be noise on every clean day, and noise
+    is what teaches a reader to skip the line the real count appears on."""
+    from sentinel.manifest import Manifest
+    from sentinel.report import Audit
+
+    a = Audit(manifest=Manifest(path=ROOT / "SENTINEL.toml", name="p",
+                                purpose="x"),
+              results=[CheckResult(name="h", findings=[
+                  Finding(check="health", title="t", title_he="ת",
+                          verdict=Verdict.WARN, severity=Severity.LOW,
+                          detail="d", detail_he="פ")])])
+    msg = telegram.format_audit(a)
+    assert "🔒" not in msg

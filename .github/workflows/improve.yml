@@ -167,6 +167,45 @@ jobs:
                Failing that, a new expectation kind or a sharper check:
                something a real project needs to state about itself and
                currently cannot. Prefer either over refactoring.
+            2b. GROW THE SECURITY COVERAGE, and treat it as the same kind of
+               work as closing a lesson. SECURITY.md states the threat model
+               and lists what is measured. Thirteen checks exist; they catch
+               the thirteen things someone thought of. Nothing makes that set
+               grow on its own, and these projects are going to be exposed to
+               the internet.
+
+               So: pick ONE vulnerability class this tool cannot currently
+               see, and make it visible. Then add it to SECURITY.md's table
+               with what it does and does not cover.
+
+               THE BAR IS THE SAME AS FOR ANY CHECK HERE, and security is where
+               it is most often lowered:
+
+                 * WRITE THE FAILING CASE FIRST and watch it fail. Three checks
+                   shipped in this project that passed on the exact state they
+                   forbade — one of them on a workflow written to be
+                   vulnerable. Every single one was caught this way and every
+                   one skipped was broken.
+                 * A FALSE POSITIVE IS WORSE HERE THAN ANYWHERE. A security
+                   scanner that cries wolf gets muted, and a muted scanner
+                   looks like coverage. If a finding would make a reasonable
+                   reader shrug, it is not ready.
+                 * SAY WHAT IT DOES NOT COVER, in the check's own docstring.
+                   Every honest control here names its limit; a check that
+                   implies more protection than it gives is worse than none.
+                 * MARK `needs_owner=True` when only a person can act —
+                   rotating a credential, changing an account setting, editing
+                   a workflow you may not touch. A finding that summons a pass
+                   which is forbidden to fix it wastes a run and teaches the
+                   reader that these messages do not lead anywhere.
+
+               Classes deliberately NOT yet covered, as a starting list rather
+               than an instruction: how old a credential is and whether it has
+               ever rotated; whether a dependency was already known-vulnerable
+               when the lock was taken; what a published artifact exposes that
+               the source does not; anything at all about the machine this runs
+               on. Prefer one of these, or something better you find.
+
             3. FALSE POSITIVES ARE BUGS, and expensive ones: a scanner that
                cries wolf gets muted, and a muted scanner looks like coverage.
                A finding a reader would dismiss is worse than no finding.

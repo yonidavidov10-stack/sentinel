@@ -280,6 +280,37 @@ floor, in order of value:
 
 None of these is blocked by anything except a decision.
 
+## Does this run on its own, and does it tell anyone?
+
+Both, and the evidence rather than the claim:
+
+* **Every audit runs all thirteen security checks.** `audit.yml` calls
+  `sentinel.cli run .` with no `--only`, so intent, security and health all
+  execute. The audit of 2026-09-14 22:17 recorded **13 security findings out of
+  50**.
+* **Daily, in both projects** — 07:30 UTC in stock-predictor, 07:40 in
+  sentinel, plus after every self-improvement pass via `workflow_run`.
+* **Reported to @Bugfixer_BS7bot**, in the same message as everything else, and
+  marked `🔒` so a reader can tell "a credential is readable" from "the
+  schedule drifted". The summary line counts them separately.
+
+### What was NOT automatic, and now is
+
+The checks were static. Thirteen of them catch the thirteen things somebody
+thought of, and nothing made that set grow — while the bug-fixer half of this
+system has improved continuously since August, because `LESSONS.md` gives it
+something to close.
+
+Security had no equivalent loop. The improvement prompt now carries one: pick a
+vulnerability class the tool cannot currently see, make it visible, and add it
+to the table above with what it does and does not cover. Held to the same bar
+as any other check here — write the failing case first and watch it fail, mark
+`needs_owner` when only a person can act, and state the limit in the docstring.
+
+That bar is not decoration. Three checks have shipped in this project that
+passed on the exact state they forbade, one of them on a workflow written to be
+vulnerable, and every one was caught by writing the failing case.
+
 ## Status, 2026-09-13
 
 **Every item this document opened with is built, and each one is measured
