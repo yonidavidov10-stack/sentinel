@@ -81,6 +81,24 @@ jobs:
           #
           # Deliberately not raised to Opus: that is a spending decision for
           # the owner, not a side effect of declaring what already runs.
+          # THE AUDIT SUMMONS THIS WORKFLOW, AND THE ACTION REFUSED IT.
+          #
+          #   Action failed with error: Workflow initiated by non-human actor:
+          #   github-actions (type: Bot). Add bot to allowed_bots list.
+          #
+          # `gh workflow run` from the audit runs as github-actions[bot], and
+          # claude-code-action blocks bot actors by default — a sensible guard
+          # against a compromised automation triggering it, and the exact thing
+          # this system is built to do on purpose.
+          #
+          # So every summoned pass died before starting, for weeks. The audit
+          # reported "Something here a pass can act on", dispatched, and the
+          # pass refused — which from outside looks exactly like a system that
+          # only reports. Only the SCHEDULED passes ever did work.
+          #
+          # Named rather than `*`: this allows the one bot that is supposed to
+          # summon it, and nothing else.
+          allowed_bots: "github-actions"
           claude_args: --model sonnet --allowedTools "Read,Edit,Write,Grep,Glob,TodoWrite,Bash(python *),Bash(python3 *),Bash(pip *),Bash(git status*),Bash(git diff*),Bash(git log*),Bash(git show*),Bash(git add*),Bash(git commit*),Bash(git ls-files*),Bash(git blame*),Bash(git grep*),Bash(git rev-parse*),Bash(git branch*),Bash(git stash list*),Bash(ls *),Bash(cat *),Bash(head *),Bash(tail *),Bash(grep *),Bash(wc *),Bash(find *),Bash(diff *),Bash(sort *),Bash(uniq *),Bash(echo *),Bash(mkdir *),Bash(mv *),Bash(cp *),Bash(rm *),Bash(sed *),Bash(awk *),Bash(chmod *),Bash(test *),Bash(pytest *)"
           prompt: |
             Scheduled self-improvement pass on `sentinel`, a project auditor.

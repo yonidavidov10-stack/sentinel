@@ -652,7 +652,47 @@ def _claude_action(m: Manifest, findings: list[Finding]) -> None:
         "הוסף שלב אחרי הפעולה שמאפס את כתובת origin עם x-access-token "
         "ו-secrets.GITHUB_TOKEN, עם if: always()."))
 
-    # 3. THE MODEL. Nothing failed here — which is the point. An undeclared
+    # 3. A WORKFLOW ANOTHER WORKFLOW SUMMONS MUST ALLOW A BOT TO SUMMON IT.
+    #    claude-code-action refuses a non-human actor by default — a sensible
+    #    guard against compromised automation triggering it, and precisely what
+    #    this system does on purpose. `gh workflow run` from the audit runs as
+    #    github-actions[bot], so every summoned pass died before starting:
+    #
+    #      Workflow initiated by non-human actor: github-actions (type: Bot)
+    #
+    #    It ran for weeks. The audit said "something here a pass can act on",
+    #    dispatched, and the pass refused — which from outside is
+    #    indistinguishable from a system that only reports. Only the SCHEDULED
+    #    passes ever did any work, so the failure hid behind the half that
+    #    worked.
+    # MATCHED ON THE KEY, NOT THE WORD. The first version searched for the bare
+    # string "allowed_bots" — which appears in the comment above the setting,
+    # explaining why it is there. So the check passed on a file with the
+    # setting DELETED, tripping over its own documentation. Third time that
+    # exact shape has appeared here; a grep for a config key must anchor to the
+    # key.
+    _ALLOWED_BOTS = re.compile(r"^\s*allowed_bots:", re.M)
+    _DISPATCH = re.compile(r"^\s*workflow_dispatch:", re.M)
+    summoned = [name for name, text in users
+                if _DISPATCH.search(text) and not _ALLOWED_BOTS.search(text)]
+    # ALWAYS APPENDED, never only on failure. The first version appended
+    # `if summoned:` — so a clean project produced no line at all, which is
+    # indistinguishable from a check that is not running. That is the same
+    # shape as everything else in this file: silence is not evidence.
+    findings.append(_action_finding(
+            summoned,
+            "A workflow another workflow summons lets a bot summon it",
+            "תהליך שתהליך אחר מזמין מתיר לבוט להזמין אותו",
+            len(users),
+            "Add `allowed_bots: \"github-actions\"` to the action's inputs. "
+            "Without it every dispatched run dies before Claude starts, and "
+            "the only visible symptom is findings that never get fixed.",
+            "הוסף allowed_bots: \"github-actions\" לקלט של הפעולה. בלעדיו כל "
+            "ריצה שהוזמנה מתה לפני ש-Claude מתחיל, והתסמין היחיד הוא ממצאים "
+            "שלא מתוקנים.",
+            severity=Severity.HIGH))
+
+    # 4. THE MODEL. Nothing failed here — which is the point. An undeclared
     #    model means whatever the account default happens to be does the work,
     #    so a change of default silently changes what writes a daily message or
     #    edits this repository, with no diff recording it.

@@ -280,6 +280,33 @@ floor, in order of value:
 
 None of these is blocked by anything except a decision.
 
+## One engine, not two
+
+**The bug fixer and the security checks are the same machine**, and that is
+deliberate rather than convenient. `sentinel run` executes `intent`, `security`
+and `health` in one pass; one audit, one message, one daemon, one history.
+
+So a conclusion reached on either side applies to both by construction:
+
+* a finding is a `Finding`, whichever family produced it — same verdict
+  vocabulary, same UNKNOWN-is-never-a-pass rule, same `needs_owner`;
+* one daemon acts on all of them, under the same `--should-fix` decision;
+* `LESSONS.md` is shared. L033's "two scanners sharing a spelling, not a
+  meaning" came from a security scanner and is a rule for every check here;
+  L020's "a mistake that recurs across files is one to check" came from a
+  workflow bug and is why the security checks live in `health` rather than in
+  one project's manifest;
+* every structural fix lands once. `allowed_bots` was found through the
+  bug-fixing loop and restores the security fixing loop at the same time,
+  because there is only one loop.
+
+**Where they genuinely differ is the bar, not the machinery.** A false positive
+in a security check costs more: a scanner that cries wolf gets muted, and a
+muted scanner looks like coverage. That is why several security findings are
+WARN where the equivalent health finding would be FAIL, and why `needs_owner`
+was introduced on the security side first — more of these can only be fixed by
+a person.
+
 ## Does this run on its own, and does it tell anyone?
 
 Both, and the evidence rather than the claim:

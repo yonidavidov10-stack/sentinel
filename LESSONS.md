@@ -119,6 +119,49 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L038 — The summoned pass refused to run, for weeks
+**Found** 2026-09-15, from the owner saying it a third time · **status: closed**
+
+> "מתכן הבאגים עדיין רק שולח הודעה ולא מסדר"
+
+Said twice before and answered twice with wiring that was correct. The wiring
+WAS correct. The audit fired, decided, dispatched — and the pass died on its
+first step:
+
+```
+Action failed with error: Workflow initiated by non-human actor:
+github-actions (type: Bot). Add bot to allowed_bots list.
+```
+
+`claude-code-action` blocks non-human actors by default. That is a good guard —
+a compromised automation triggering an agent with write access is exactly the
+attack it prevents — and it is precisely what this system is built to do on
+purpose. `gh workflow run` from the audit runs as `github-actions[bot]`, so
+**every summoned pass has died before starting since the loop was built.**
+
+**IT HID BEHIND THE HALF THAT WORKED.** Scheduled passes ran fine and did real
+work, so `improve.yml` showed a healthy mix of successes. Only the dispatched
+runs failed, and only they were the ones the audit had asked for. From outside
+it looked exactly like a system that reports and never fixes — which is what
+the owner said three times, correctly, while I twice fixed the wrong layer.
+
+**What I should have done the first time: follow the summoned run.** I verified
+the decision, the gate and the dispatch, and never once opened the run that
+dispatch produced. The question "does it summon" is not the question "does the
+summoned thing work".
+
+**Check:** `_claude_action` now reports any dispatchable workflow using the
+action without `allowed_bots`.
+
+And the check's first version passed with the setting deleted — it searched for
+the bare word, which appears in the comment ABOVE the setting explaining why it
+is there. **Third time a check has tripped over its own documentation.** A grep
+for a config key anchors to the key.
+
+Its second version appended a finding only on failure, so a clean project
+produced no line at all — indistinguishable from a check that is not running.
+Silence is not evidence, and that is the fourth time this file has said so.
+
 ## L037 — SKIP is the answer when a check cannot apply where it runs
 **Found** 2026-09-15, from the bot's own report · **status: closed**
 

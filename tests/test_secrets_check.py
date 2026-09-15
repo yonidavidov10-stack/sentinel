@@ -260,6 +260,8 @@ def test_the_app_grant_error_is_recognised_too(tmp_path, monkeypatch):
 # already contains one lesson about that.
 
 GOOD = """
+on:
+  workflow_dispatch:
 permissions:
   contents: write
   id-token: write
@@ -269,6 +271,7 @@ jobs:
       - uses: anthropics/claude-code-action@v1
         with:
           claude_args: --model sonnet --allowedTools "Read"
+          allowed_bots: "x"
       - name: Restore git credentials for the steps below
         run: git remote set-url origin ...
       - name: Keep it
@@ -296,11 +299,43 @@ def _verdict(fs, needle):
     raise AssertionError(f"no finding matching {needle!r} in {list(fs)}")
 
 
-def test_a_correct_workflow_passes_all_three(tmp_path):
+def test_a_correct_workflow_passes_every_check(tmp_path):
     fs = _findings(tmp_path, GOOD)
-    assert len(fs) == 3
+    assert len(fs) == 4
     for f in fs.values():
         assert f.verdict is Verdict.PASS, f.title
+
+
+def test_a_dispatchable_workflow_must_let_a_bot_summon_it(tmp_path):
+    """THE BUG THAT MADE THE WHOLE FIXING LOOP LOOK LIKE A REPORTING LOOP.
+
+    claude-code-action refuses a non-human actor by default, and the audit
+    summons the improvement pass with `gh workflow run`, which runs as
+    github-actions[bot]:
+
+        Workflow initiated by non-human actor: github-actions (type: Bot)
+
+    Every summoned pass died before Claude started. The audit said "something
+    here a pass can act on", dispatched, and the pass refused — leaving
+    findings that never got fixed and an owner reasonably concluding the
+    system only reports. It hid behind the scheduled passes, which worked.
+    """
+    fs = _findings(tmp_path, GOOD.replace('          allowed_bots: "x"\n', ""))
+    f = _verdict(fs, "bot summon")
+    assert f.verdict is Verdict.FAIL
+    assert "allowed_bots" in f.remedy
+
+
+def test_the_check_does_not_trip_over_its_own_documentation(tmp_path):
+    """The first version searched for the bare word `allowed_bots`, which
+    appears in the comment explaining the setting — so it passed on a file with
+    the setting deleted. Third time that shape has appeared in this project: a
+    grep for a config key must anchor to the key."""
+    commented = GOOD.replace(
+        '          allowed_bots: "x"\n',
+        "          # allowed_bots is why this works\n")
+    f = _verdict(_findings(tmp_path, commented), "bot summon")
+    assert f.verdict is Verdict.FAIL, "a comment is not a setting"
 
 
 def test_missing_oidc_fails_and_names_the_file(tmp_path):
