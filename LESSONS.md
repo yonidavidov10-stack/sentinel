@@ -119,6 +119,61 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L039 — A lesson applied to one check and not its siblings
+**Found** 2026-09-17, from the bot, two days after the lesson was written · **status: closed**
+
+The daily report listed three checks that had never passed:
+
+```
+backup second copy      10 runs, 0 passes
+commits signed           9 runs, 0 passes
+secrets exist            8 runs, 0 passes
+```
+
+L037 had fixed the third two days earlier — a question a CI runner structurally
+cannot answer is SKIP, not UNKNOWN — and **the other two were the same lesson,
+not applied.** The owner had said it in the message before: a conclusion reached
+on one side belongs on both. I wrote it down and then did it for one check.
+
+**The backup check** asked a CI runner whether `/Volumes/T9 Davidov/...`
+existed. It can never exist there. SKIP in CI now; still UNKNOWN on the owner's
+machine, where an unplugged drive genuinely might have been checked.
+
+**The signing check was worse, because it did not know it was blind.** `%G?`
+VERIFIES, and verification depends on the machine. With the owner's
+`gpg.format=ssh` and `allowedSignersFile`, a signed commit reads `G`. In CI,
+with neither, git prints *"allowedSignersFile needs to be configured"* and
+reports the same commit as `N`. So it counted every signed commit as unsigned
+wherever it actually ran — **21 of 30 in CI against 1 of 30 on the laptop**, a
+number that could never fall. It now reads the raw `gpgsig` header: presence
+was always the question, and presence is identical everywhere.
+
+**And the check that caught all this had its own hole.** `_never_passed` skipped
+SKIP rows but kept the OLD UNKNOWN rows of a check since reclassified, so a
+fixed check went on being reported for sixty messages. A check whose latest
+verdict is SKIP is now excluded outright.
+
+**Then eighteen tests broke that had not changed.** `commit.gpgsign` is on
+globally, the key has a passphrase, and after a restart the agent was empty —
+so every scratch-repo commit in the suite failed. **The suite was reading the
+developer's machine.** CI, with no such config, would never have seen it. A
+conftest now gives every test an empty git config, and the suite passes with
+the agent emptied on purpose.
+
+And the same restart meant **every real `git commit` on the owner's machine was
+failing** — the "type the passphrase once" I promised does not survive a
+reboot. `~/.zshrc` now loads the key from the Keychain on every shell.
+
+**Check:** `test_a_signed_commit_counts_as_signed_with_no_git_config_at_all`,
+`test_a_local_path_in_ci_is_skip_not_unknown`,
+`test_a_check_reclassified_to_skip_stops_counting_as_never_passed`, and the
+conftest itself.
+
+**The rule, stated so it cannot be half-applied again:** when a lesson is about
+an ENVIRONMENT — CI cannot see X, a clean git cannot verify Y — search every
+check for the same dependency before closing it. The lesson is about the
+environment, not about the check that happened to reveal it.
+
 ## L038 — The summoned pass refused to run, for weeks
 **Found** 2026-09-15, from the owner saying it a third time · **status: closed**
 

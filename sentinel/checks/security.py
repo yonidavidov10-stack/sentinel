@@ -336,6 +336,29 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
                       f"{copies} — מתואר ולא נתיב, אז הטריות שלו בהנחה"))
         return
 
+    # IN CI, A LOCAL PATH CAN NEVER BE REACHED, so the answer is SKIP, not
+    # UNKNOWN. This is L037 applied to a sibling it should have covered on the
+    # day it was written: the secrets check was moved to SKIP for exactly this
+    # reason — a question a CI runner structurally cannot answer — and this one
+    # was left reporting UNKNOWN from a machine that will never have the owner's
+    # SSD plugged into it. Ten runs, zero passes, one line of noise in every
+    # report.
+    #
+    # On the owner's machine an unplugged drive is still UNKNOWN below, because
+    # there it genuinely might have been checked and was not.
+    import os
+    if os.environ.get("GITHUB_ACTIONS") == "true" and dest.is_absolute() \
+            and not dest.exists():
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.SKIP, severity=Severity.MEDIUM,
+            detail=f"the second copy is a local path ({copies}), which a CI "
+                   f"runner can never reach — this is checked from the owner's "
+                   f"machine",
+            detail_he=f"העותק השני הוא נתיב מקומי ({copies}) ששרת CI לעולם לא "
+                      f"יגיע אליו — זה נבדק מהמחשב של הבעלים"))
+        return
+
     # AN UNPLUGGED DRIVE IS NOT A MISSING BACKUP. Reporting FAIL whenever the
     # SSD is not connected would fire on most days, mean nothing on any of
     # them, and teach its reader that this line is noise — which is how the one
@@ -568,13 +591,23 @@ def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
         return          # nothing declared, nothing to hold anyone to
 
     look_back = int(m.security.get("signing_lookback", 30))
-    # QUOTED, and it has to be. `run` goes through a shell, so the `|`
-    # separators in this format string were read as PIPES: `git log --format=%H`
-    # piped into a command called `%G?`. The check reported "could not read the
-    # commit log" and was right about the symptom and wrong about the cause,
-    # which is the most expensive kind of error message.
-    r = run(f"git log -{look_back} --format='%H|%G?|%ae|%s'", m.root,
-            timeout_s=60, clip=False)
+
+    # READ THE RAW COMMIT HEADER, NOT `%G?`.
+    #
+    # `%G?` VERIFIES, and verification depends on the machine asking. On the
+    # owner's laptop — with gpg.format=ssh and an allowedSignersFile — a signed
+    # commit reads G. In CI, with neither, git prints
+    #   "gpg.ssh.allowedSignersFile needs to be configured and exist"
+    # and reports the SAME commit as N. So this check counted every signed
+    # commit as unsigned wherever the audit actually runs: nine runs, zero
+    # passes, a count that never fell no matter how much was signed.
+    # `_never_passed` flagged it; the place a check runs is part of the check.
+    #
+    # The question here was only ever "is a signature PRESENT" — verifying it
+    # needs the owner's key list, which CI does not and should not have. A
+    # `gpgsig` header answers presence identically on every machine.
+    r = run(f"git log -{look_back} --pretty=raw", m.root, timeout_s=60,
+            clip=False)
     if not r.ok:
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he,
@@ -584,21 +617,33 @@ def _owner_commits_are_signed(m: Manifest, findings: list[Finding]) -> None:
             evidence=(r.error or r.output)[:200]))
         return
 
-    unsigned = []
-    signed = 0
+    commits, cur = [], None
     for line in r.stdout.splitlines():
-        parts = line.split("|", 3)
-        if len(parts) < 4:
+        if line.startswith("commit "):
+            if cur:
+                commits.append(cur)
+            cur = {"sha": line.split()[1], "email": "", "signed": False,
+                   "subject": ""}
+        elif cur is None:
             continue
-        sha, status, email, subject = parts
-        if email.lower() != owner.lower():
+        elif line.startswith("author "):
+            lt, gt = line.find("<"), line.find(">")
+            cur["email"] = line[lt + 1:gt] if lt != -1 < gt else ""
+        elif line.startswith(("gpgsig ", "gpgsig-sha256 ")):
+            cur["signed"] = True
+        elif line.startswith("    ") and not cur["subject"]:
+            cur["subject"] = line.strip()
+    if cur:
+        commits.append(cur)
+
+    unsigned, signed = [], 0
+    for c in commits:
+        if c["email"].lower() != owner.lower():
             continue                         # a bot, or someone else
-        # G good, U good-but-untrusted, X/Y/R expired or revoked — all of them
-        # mean a signature is PRESENT, which is the question here. N means none.
-        if status == "N":
-            unsigned.append(f"{sha[:9]} {subject[:70]}")
-        else:
+        if c["signed"]:
             signed += 1
+        else:
+            unsigned.append(f"{c['sha'][:9]} {c['subject'][:70]}")
 
     if not unsigned:
         findings.append(Finding(

@@ -138,12 +138,28 @@ def never_passed(root: Path, min_runs: int = 6) -> list[dict]:
     points at the check rather than at the project.
     """
     seen: dict[tuple[str, str], dict] = {}
-    for report in load(root):
+    # A CHECK WHOSE LATEST VERDICT IS SKIP HAS BEEN RECLASSIFIED, and its old
+    # runs are testimony about a question it no longer asks. Skipping SKIP rows
+    # alone was not enough: a check moved to SKIP keeps its UNKNOWN history for
+    # sixty messages, so "8 runs, zero passes" went on warning about a check
+    # that had already been fixed — the exact noise this warning exists to
+    # remove. `load` is newest first, so the first verdict seen per key is the
+    # current one.
+    latest: dict[tuple[str, str], str] = {}
+    reports = list(load(root))
+    for report in reports:
+        for f in report.get("findings") or []:
+            latest.setdefault((f.get("check", ""), f.get("title", "")),
+                              f.get("verdict", ""))
+
+    for report in reports:
         for f in report.get("findings") or []:
             verdict = f.get("verdict")
             if verdict == "skip":          # deliberately not applicable
                 continue
             key = (f.get("check", ""), f.get("title", ""))
+            if latest.get(key) == "skip":
+                continue
             entry = seen.setdefault(key, {
                 "check": key[0], "title": key[1],
                 "title_he": f.get("title_he", ""), "runs": 0, "passes": 0,

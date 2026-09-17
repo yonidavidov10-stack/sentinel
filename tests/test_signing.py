@@ -138,3 +138,39 @@ def test_a_directory_that_is_not_a_repository_says_nothing(tmp_path):
     out = []
     security._owner_commits_are_signed(_m(tmp_path), out)
     assert out == []
+
+
+def test_a_signed_commit_counts_as_signed_with_no_git_config_at_all(repo, tmp_path, monkeypatch):
+    """THE BUG: `%G?` verifies, and verification depends on the machine. In CI
+    — no gpg.format, no allowedSignersFile — git reports an SSH-signed commit
+    as N. The check counted every signed commit as unsigned wherever the audit
+    actually ran: nine runs, zero passes, a count that never fell.
+
+    Reproduced by writing a commit object that CARRIES a signature header and
+    reading it in an environment with no git configuration whatsoever."""
+    # Build a commit that has a gpgsig header, without needing a real key.
+    _commit(repo, "base")
+    tree = git(repo, "rev-parse", "HEAD^{tree}").stdout.strip()
+    parent = git(repo, "rev-parse", "HEAD").stdout.strip()
+    raw = (f"tree {tree}\nparent {parent}\n"
+           f"author Owner <{OWNER}> 1700000000 +0000\n"
+           f"committer Owner <{OWNER}> 1700000000 +0000\n"
+           "gpgsig -----BEGIN SSH SIGNATURE-----\n"
+           " U1NIU0lHAAAAAQ==\n"
+           " -----END SSH SIGNATURE-----\n"
+           "\nsigned by the owner\n")
+    sha = subprocess.run(("git", "hash-object", "-t", "commit", "-w", "--stdin"),
+                         cwd=repo, input=raw, text=True,
+                         capture_output=True).stdout.strip()
+    git(repo, "update-ref", "HEAD", sha)
+
+    empty = tmp_path / "emptyhome"
+    empty.mkdir()
+    monkeypatch.setenv("HOME", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+
+    f = _one(_m(repo, signing_lookback=1))
+    assert f.verdict is Verdict.PASS, (
+        "a commit carrying a signature must count as signed even where the "
+        "signature cannot be verified — presence is the question, not trust")

@@ -111,3 +111,21 @@ def test_a_described_location_is_trusted_and_says_so(tmp_path):
     f = _one(_m(tmp_path, second_copy="monthly, printed and filed"))
     assert f.verdict is Verdict.PASS
     assert "taken on trust" in f.detail
+
+
+def test_a_local_path_in_ci_is_skip_not_unknown(tmp_path, monkeypatch):
+    """L037 applied to the sibling it should have covered: a CI runner can
+    never have the owner's SSD attached. Reported as UNKNOWN it failed ten
+    runs out of ten and put a line of noise in every report."""
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    f = _one(_m(tmp_path, second_copy="/Volumes/NotMounted/Backups"))
+    assert f.verdict is Verdict.SKIP
+    assert f.verdict is not Verdict.PASS
+
+
+def test_the_same_path_on_the_owners_machine_is_still_unknown(tmp_path, monkeypatch):
+    """Where it might genuinely have been checked, not checking it stays
+    visible."""
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    f = _one(_m(tmp_path, second_copy="/Volumes/NotMounted/Backups"))
+    assert f.verdict is Verdict.UNKNOWN

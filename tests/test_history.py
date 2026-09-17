@@ -204,3 +204,41 @@ def test_only_the_open_ones_survive_the_filter(root):
                      [f("fixed"), f("still broken")])
     got = history.recurring(root, still_open={("intent", "still broken")})
     assert [g["title"] for g in got] == ["still broken"]
+
+
+def test_a_check_reclassified_to_skip_stops_counting_as_never_passed(tmp_path):
+    """Moved to SKIP because CI can never answer it, the secrets check went on
+    being reported as "8 runs, zero passes" — its old UNKNOWN rows stayed in
+    the sixty-message window. A warning about a check that has already been
+    fixed is the noise `_never_passed` exists to remove."""
+    import json
+    from sentinel import history
+
+    hist = tmp_path / ".audit-history"
+    hist.mkdir()
+    # Older: unknown, six times. Newest: skip.
+    for n in range(6):
+        (hist / f"2026090{n + 1}T000000Z.json").write_text(json.dumps({
+            "sent": True, "started_at": f"2026-09-0{n + 1}",
+            "findings": [{"check": "health", "title": "secrets",
+                          "verdict": "unknown"}]}), encoding="utf-8")
+    (hist / "20260910T000000Z.json").write_text(json.dumps({
+        "sent": True, "started_at": "2026-09-10",
+        "findings": [{"check": "health", "title": "secrets",
+                      "verdict": "skip"}]}), encoding="utf-8")
+    assert history.never_passed(tmp_path) == []
+
+
+def test_a_check_still_unknown_is_still_reported(tmp_path):
+    """The reclassification rule must not swallow the real case."""
+    import json
+    from sentinel import history
+
+    hist = tmp_path / ".audit-history"
+    hist.mkdir()
+    for n in range(7):
+        (hist / f"2026090{n + 1}T000000Z.json").write_text(json.dumps({
+            "sent": True, "started_at": f"2026-09-0{n + 1}",
+            "findings": [{"check": "health", "title": "broken",
+                          "verdict": "unknown"}]}), encoding="utf-8")
+    assert [e["title"] for e in history.never_passed(tmp_path)] == ["broken"]
