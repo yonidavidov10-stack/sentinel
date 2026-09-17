@@ -24,8 +24,21 @@ from __future__ import annotations
 import pytest
 
 
+# Variables that tell code it is running in CI. Cleared for every test, so a
+# test's verdict does not depend on WHERE the suite happens to run.
+#
+# Added the same day as the git isolation, and for the same reason one layer
+# out: `test_an_unplugged_drive_is_unknown_not_a_failure` passed on the laptop
+# and failed in CI, because the backup check had just learned to answer SKIP
+# when GITHUB_ACTIONS=true. A test that wants CI behaviour sets it itself.
+_CI_ENV = ("GITHUB_ACTIONS", "CI", "GITHUB_WORKFLOW", "GITHUB_RUN_ID",
+           "RUNNER_TEMP")
+
+
 @pytest.fixture(autouse=True)
 def _isolated_git_config(tmp_path_factory, monkeypatch):
+    for name in _CI_ENV:
+        monkeypatch.delenv(name, raising=False)
     home = tmp_path_factory.mktemp("git-home")
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / ".gitconfig"))

@@ -119,6 +119,55 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L040 — The self-improvement pass never ran once, and nothing said so
+**Found** 2026-09-17, clearing the last findings · **status: closed**
+
+sentinel's `improve.yml` has failed on every run since 2026-09-13:
+
+```
+CLAUDE_CODE_OAUTH_TOKEN ... is required
+```
+
+The secret exists and holds an empty string — the second of the owner's two
+attempts to set it, both on 2026-09-13. A validating script was written for the
+third attempt, the conversation moved to the bot secrets, and **I never went
+back to confirm the Claude token had been fixed.** The timestamp still reads
+04:14:20.
+
+**So the tool meant to improve itself has never improved itself.** And no audit
+said so. Every one reported the project healthy, because:
+
+* `_ci_status` judges the latest run of ANY workflow, and that was always a
+  green `tests` or `audit` run;
+* `_secrets` checks that a secret NAME exists — it cannot read the value, and
+  an empty value is present.
+
+That is the premise of this whole tool, missed by this tool: something that is
+supposed to happen, not happening, every day, with nothing saying so.
+
+**Check:** `_no_workflow_always_fails` judges each workflow on its own last four
+real verdicts. It went red on sentinel immediately.
+
+## The same day, three more of the same family
+
+**The collision check failed on data its fix had replaced.** daily.yml moved on
+2026-09-12; every day since came in 51-57 minutes apart; the check took the
+tightest day of the whole window, a 14-minute day from the old schedule. Now it
+judges only days since the last commit that changed a `- cron:` line, read from
+git. Third instance of judging the current configuration by evidence from the
+previous one, after `recurring` and `never_passed`.
+
+**The allowed_bots check was a false positive.** It flagged every workflow with
+a `workflow_dispatch` trigger. market-news.yml was reported though nothing has
+ever dispatched it, and the only "fix" was to widen what a bot may trigger for
+no reason. It now flags only targets of a real `gh workflow run` in another
+workflow.
+
+**A test passed on the laptop and failed in CI, an hour after L039 said exactly
+that.** The backup check had just learned to answer SKIP when
+`GITHUB_ACTIONS=true`, and the older test did not clear it. The conftest now
+clears the CI variables too, and the suite is run both ways before committing.
+
 ## L039 — A lesson applied to one check and not its siblings
 **Found** 2026-09-17, from the bot, two days after the lesson was written · **status: closed**
 

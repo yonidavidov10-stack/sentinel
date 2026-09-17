@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sentinel.checks import health          # noqa: E402
 from sentinel.manifest import Manifest      # noqa: E402
-from sentinel.verdict import Verdict        # noqa: E402
+from sentinel.verdict import Severity, Verdict        # noqa: E402
 
 
 def _project(tmp_path, workflow_text: str, security: dict | None = None):
@@ -306,6 +306,36 @@ def test_a_correct_workflow_passes_every_check(tmp_path):
         assert f.verdict is Verdict.PASS, f.title
 
 
+SUMMONER = "jobs:\n  s:\n    steps:\n      - run: gh workflow run w.yml\n"
+
+
+def _summoned(tmp_path, text):
+    """`text` as w.yml, plus a second workflow that dispatches it."""
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "audit.yml").write_text(SUMMONER, encoding="utf-8")
+    return _findings(tmp_path, text)
+
+
+def test_a_dispatchable_workflow_nobody_summons_is_not_flagged(tmp_path):
+    """THE FALSE POSITIVE. The first version flagged every workflow with a
+    `workflow_dispatch` trigger — every workflow a person might run by hand.
+    market-news.yml was reported though nothing has ever dispatched it, and the
+    only "fix" was to widen what a bot may trigger, for no reason."""
+    fs = _findings(tmp_path, GOOD.replace('          allowed_bots: "x"\n', ""))
+    assert _verdict(fs, "bot summon").verdict is Verdict.PASS
+
+
+def test_a_summon_in_a_comment_is_not_a_summon(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "audit.yml").write_text(
+        "jobs:\n  s:\n    steps:\n      # once ran: gh workflow run w.yml\n"
+        "      - run: echo hi\n", encoding="utf-8")
+    fs = _findings(tmp_path, GOOD.replace('          allowed_bots: "x"\n', ""))
+    assert _verdict(fs, "bot summon").verdict is Verdict.PASS
+
+
 def test_a_dispatchable_workflow_must_let_a_bot_summon_it(tmp_path):
     """THE BUG THAT MADE THE WHOLE FIXING LOOP LOOK LIKE A REPORTING LOOP.
 
@@ -320,7 +350,7 @@ def test_a_dispatchable_workflow_must_let_a_bot_summon_it(tmp_path):
     findings that never got fixed and an owner reasonably concluding the
     system only reports. It hid behind the scheduled passes, which worked.
     """
-    fs = _findings(tmp_path, GOOD.replace('          allowed_bots: "x"\n', ""))
+    fs = _summoned(tmp_path, GOOD.replace('          allowed_bots: "x"\n', ""))
     f = _verdict(fs, "bot summon")
     assert f.verdict is Verdict.FAIL
     assert "allowed_bots" in f.remedy
@@ -334,7 +364,7 @@ def test_the_check_does_not_trip_over_its_own_documentation(tmp_path):
     commented = GOOD.replace(
         '          allowed_bots: "x"\n',
         "          # allowed_bots is why this works\n")
-    f = _verdict(_findings(tmp_path, commented), "bot summon")
+    f = _verdict(_summoned(tmp_path, commented), "bot summon")
     assert f.verdict is Verdict.FAIL, "a comment is not a setting"
 
 
@@ -410,3 +440,68 @@ def test_only_the_offending_workflow_is_named(tmp_path):
     assert f.verdict is Verdict.FAIL
     assert "bad.yml" in f.evidence and "fine.yml" not in f.evidence
     assert "1 of 2" in f.detail
+
+
+# ── a workflow that never once works ───────────────────────────────────
+
+def _runs(monkeypatch, by_workflow: dict[str, list[str]]):
+    class R:
+        def __init__(self, out):
+            self.ok, self.stdout, self.output, self.error = True, out, out, ""
+
+    def fake(cmd, *a, **k):
+        for name, conclusions in by_workflow.items():
+            if f"--workflow={name}" in cmd:
+                return R("\n".join(conclusions))
+        return R("")
+
+    monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(health, "run", fake)
+
+
+def _wfs(tmp_path, *names):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    for n in names:
+        (wf / n).write_text("on: push\n", encoding="utf-8")
+    return Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p")
+
+
+def test_a_workflow_that_always_fails_is_critical(tmp_path, monkeypatch):
+    """THE MISS THIS EXISTS FOR. sentinel's improvement pass failed on every
+    run for four days — an empty token secret — while every audit said the
+    project was healthy, because the latest run of ANY workflow was always a
+    green test or audit run."""
+    _runs(monkeypatch, {"improve.yml": ["failure"] * 4,
+                        "tests.yml": ["success"] * 4})
+    out = []
+    health._no_workflow_always_fails(_wfs(tmp_path, "improve.yml", "tests.yml"), out)
+    f = out[0]
+    assert f.verdict is Verdict.FAIL
+    assert f.severity is Severity.CRITICAL
+    assert "improve.yml" in f.evidence
+    assert "tests.yml" not in f.evidence
+
+
+def test_one_success_among_failures_is_not_always(tmp_path, monkeypatch):
+    _runs(monkeypatch, {"a.yml": ["failure", "failure", "success", "failure"]})
+    out = []
+    health._no_workflow_always_fails(_wfs(tmp_path, "a.yml"), out)
+    assert out[0].verdict is Verdict.PASS
+
+
+def test_cancelled_runs_do_not_count_either_way(tmp_path, monkeypatch):
+    """A superseded run is not a verdict on the workflow. Counting it as a
+    failure would condemn anything pushed twice in a minute."""
+    _runs(monkeypatch, {"a.yml": ["cancelled", "cancelled", "failure",
+                                  "failure"]})
+    out = []
+    health._no_workflow_always_fails(_wfs(tmp_path, "a.yml"), out)
+    assert out == [], "two real verdicts is too few to judge"
+
+
+def test_a_young_workflow_is_not_judged(tmp_path, monkeypatch):
+    _runs(monkeypatch, {"a.yml": ["failure"]})
+    out = []
+    health._no_workflow_always_fails(_wfs(tmp_path, "a.yml"), out)
+    assert out == []

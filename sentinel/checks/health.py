@@ -608,6 +608,77 @@ _ACTION = "claude-code-action"
 _GIT_WRITE = re.compile(r"^\s*git (add|commit|push)\b", re.M)
 
 
+def _no_workflow_always_fails(m: Manifest, findings: list[Finding]) -> None:
+    """Is any single workflow failing on every run?
+
+    WRITTEN AFTER FINDING THAT ONE HAD, FOR FOUR DAYS, UNNOTICED. sentinel's
+    self-improvement pass failed on every run from 2026-09-13 — its token
+    secret held an empty string — while every audit reported the project
+    healthy. `_ci_status` looks at the latest run of ANY workflow, and the
+    latest was always a green `tests` or `audit`, so the one workflow that never
+    once worked was hidden behind the ones that did.
+
+    That is the whole premise of this tool, missed by this tool: a thing that
+    is supposed to happen, not happening, every day, with nothing saying so.
+
+    So each workflow is judged on its own recent runs. Every one failed → FAIL.
+    """
+    title = "No workflow fails on every run"
+    title_he = "אף תהליך לא נכשל בכל ריצה"
+
+    if not which("gh"):
+        return
+    wf_dir = m.root / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return
+
+    depth = 4
+    always, checked = [], 0
+    for f in sorted(wf_dir.glob("*.y*ml")):
+        r = run(f"gh run list --workflow={f.name} --status completed "
+                f"--limit {depth} --json conclusion --jq '.[].conclusion'",
+                m.root, timeout_s=60)
+        if not r.ok:
+            continue
+        # cancelled/skipped are not verdicts on the workflow — see _ci_status.
+        results = [x for x in r.stdout.split()
+                   if x not in ("cancelled", "skipped", "stale", "neutral")]
+        if len(results) < depth:
+            continue                       # too young to judge
+        checked += 1
+        if all(x == "failure" for x in results):
+            always.append(f"{f.name}: last {len(results)} runs all failed")
+
+    if not checked:
+        return
+
+    if not always:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+            severity=Severity.HIGH,
+            detail=f"{checked} workflow(s) with enough history, none failing "
+                   f"every time",
+            detail_he=f"{checked} תהליכים עם מספיק היסטוריה, אף אחד לא נכשל "
+                      f"בכל פעם"))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+        severity=Severity.CRITICAL,
+        detail=f"{len(always)} workflow(s) have failed on every recent run — "
+               f"whatever they exist to do is not happening at all",
+        detail_he=f"{len(always)} תהליכים נכשלו בכל ריצה אחרונה — מה שהם קיימים "
+                  f"כדי לעשות לא קורה בכלל",
+        evidence="\n".join(always),
+        remedy="Open the latest run of each. A workflow that fails identically "
+               "every day is usually missing a credential or permission, not "
+               "broken code — and a green latest-run check elsewhere will not "
+               "reveal it.",
+        remedy_he="פתח את הריצה האחרונה של כל אחד. תהליך שנכשל זהה כל יום בדרך "
+                  "כלל חסר אישור גישה או הרשאה, לא קוד שבור — ובדיקת "
+                  "'הריצה האחרונה ירוקה' לא תחשוף את זה."))
+
+
 def _claude_action(m: Manifest, findings: list[Finding]) -> None:
     wf_dir = m.root / ".github" / "workflows"
     if not wf_dir.is_dir():
@@ -672,9 +743,27 @@ def _claude_action(m: Manifest, findings: list[Finding]) -> None:
     # exact shape has appeared here; a grep for a config key must anchor to the
     # key.
     _ALLOWED_BOTS = re.compile(r"^\s*allowed_bots:", re.M)
-    _DISPATCH = re.compile(r"^\s*workflow_dispatch:", re.M)
+
+    # ONLY WORKFLOWS SOMETHING ACTUALLY SUMMONS. The first version flagged every
+    # workflow with a `workflow_dispatch` trigger — which is every workflow a
+    # person might run by hand. market-news.yml was reported for missing
+    # `allowed_bots` though no workflow has ever dispatched it: a finding the
+    # owner could "fix" only by widening what a bot may trigger, for nothing.
+    #
+    # A summon is a `gh workflow run <name>` in another workflow. Only its
+    # target needs to admit a bot.
+    all_texts = {f.name: f.read_text(encoding="utf-8", errors="ignore")
+                 for f in sorted(wf_dir.glob("*.y*ml"))}
+    targets = set()
+    for src, text in all_texts.items():
+        for line in text.splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            for mt in re.finditer(r"gh\s+workflow\s+run\s+([\w.\-]+)", line):
+                if mt.group(1) != src:
+                    targets.add(mt.group(1))
     summoned = [name for name, text in users
-                if _DISPATCH.search(text) and not _ALLOWED_BOTS.search(text)]
+                if name in targets and not _ALLOWED_BOTS.search(text)]
     # ALWAYS APPENDED, never only on failure. The first version appended
     # `if summoned:` — so a clean project produced no line at all, which is
     # indistinguishable from a check that is not running. That is the same
@@ -868,7 +957,8 @@ def check(m: Manifest) -> CheckResult:
     with timer() as t:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
-        for step in (_tests, _ci, _ci_status, _secrets, _claude_action,
+        for step in (_tests, _ci, _ci_status, _no_workflow_always_fails,
+                     _secrets, _claude_action,
                      _ignored_but_tracked, _manifest_shrank, _git,
                      _recurring, _never_passed, _improvements):
             try:
