@@ -1,6 +1,6 @@
 {
-  "head": "79aeabf7852a431db8cf47c6fab94770ee8ad5c0",
-  "count": 63,
-  "at": "2026-09-20T12:18:36Z",
+  "head": "cdd8f4b1497f7eb4f63a0fd462ba4a112f8a67f0",
+  "count": 64,
+  "at": "2026-09-20T12:37:31Z",
   "note": "Written by `sentinel record`. If a later audit says history was rewritten, this is the commit it expected to still find."
 }
