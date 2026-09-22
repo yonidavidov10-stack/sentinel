@@ -381,3 +381,49 @@ def test_the_archive_records_who_can_close_a_finding():
                       severity=Severity.CRITICAL, detail="fix it"))
     got = {f["title"]: f["needs_owner"] for f in to_dict(a)["findings"]}
     assert got == {"owner only": True, "mine": False}
+
+
+# ── the summary line ───────────────────────────────────────────────────
+#
+# The owner pasted "❌ 1 נשברו · 👤 1 ממתינים לך" and it described ONE finding.
+# Two counts of different kinds, joined by the same separator, read as two
+# problems. A correct report nobody understands has failed.
+
+def _summary(*findings) -> str:
+    return telegram.format_audit(audit(*findings)).splitlines()[2]
+
+
+def test_a_tag_is_shown_as_a_subset_not_another_problem():
+    f = Finding(check="health", title="fixer is off", verdict=Verdict.FAIL,
+                severity=Severity.CRITICAL, detail="disabled",
+                needs_owner=True)
+    line = _summary(f)
+    assert "מתוכם" in line
+    assert line.index("❌") < line.index("👤")
+
+
+def test_one_finding_is_singular():
+    f = Finding(check="health", title="x", verdict=Verdict.FAIL,
+                severity=Severity.CRITICAL, detail="d", needs_owner=True)
+    line = _summary(f)
+    assert "1 נשבר " in line + " " and "נשברו" not in line
+    assert "1 ממתין לך" in line
+
+
+def test_several_findings_are_plural():
+    fs = [Finding(check="health", title=f"x{i}", verdict=Verdict.FAIL,
+                  severity=Severity.CRITICAL, detail="d") for i in range(2)]
+    assert "2 נשברו" in _summary(*fs)
+
+
+def test_a_tag_never_appears_without_a_count_to_hang_it_on():
+    """The reason there is no empty-left-hand-side branch. A tag describes an
+    actionable finding, and every actionable finding is counted — so "מתוכם"
+    always has something before it. This test is what makes that a fact rather
+    than an assumption, since the branch guarding it would be unreachable."""
+    f = Finding(check="security", title="x", verdict=Verdict.WARN,
+                severity=Severity.LOW, detail="d")
+    line = _summary(f)
+    assert line.startswith("⚠️")
+    assert "🔒" in line and "מתוכם" in line
+    assert not line.lstrip().startswith("—")

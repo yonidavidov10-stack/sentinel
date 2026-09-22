@@ -156,20 +156,38 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
     # a bug report about it — and once several projects report here, the
     # distinction is the whole point of the line.
     L = [f"🛠 <b>Bug Fixer</b>({_esc(audit.manifest.name)})", ""]
+    # TWO KINDS OF COUNT, AND THEY MUST NOT LOOK ALIKE. ❌ ❓ ⚠️ partition the
+    # findings; 🔒 and 👤 are TAGS ON THOSE SAME findings. Joined by one " · "
+    # they read as separate problems: the owner was sent "❌ 1 נשברו · 👤 1
+    # ממתינים לך" for a single finding and reasonably read it as two. So the
+    # tags go after a dash, introduced by "מתוכם" — of those.
     counts = []
-    if by_verdict[Verdict.FAIL]:
-        counts.append(f"❌ {len(by_verdict[Verdict.FAIL])} נשברו")
-    if by_verdict[Verdict.UNKNOWN]:
-        counts.append(f"❓ {len(by_verdict[Verdict.UNKNOWN])} לא נבדקו")
+    n_fail = len(by_verdict[Verdict.FAIL])
+    if n_fail:
+        counts.append(f"❌ {n_fail} {'נשבר' if n_fail == 1 else 'נשברו'}")
+    n_unk = len(by_verdict[Verdict.UNKNOWN])
+    if n_unk:
+        counts.append(f"❓ {n_unk} {'לא נבדק' if n_unk == 1 else 'לא נבדקו'}")
     if by_verdict[Verdict.WARN]:
         counts.append(f"⚠️ {len(by_verdict[Verdict.WARN])} לתשומת לב")
+
+    tags = []
     sec = [f for f in actionable if f.check == "security"]
     if sec:
-        counts.append(f"🔒 {len(sec)} אבטחה")
+        tags.append(f"🔒 {len(sec)} אבטחה")
     mine = [f for f in actionable if f.needs_owner]
     if mine:
-        counts.append(f"👤 {len(mine)} ממתינים לך")
-    L.append(" · ".join(counts))
+        tags.append(
+            f"👤 {len(mine)} {'ממתין' if len(mine) == 1 else 'ממתינים'} לך")
+
+    # `counts` cannot be empty while `tags` is not: a tag only ever describes
+    # an actionable finding, and every actionable finding is counted above. So
+    # there is no empty-left-hand-side case to guard — writing one would be an
+    # unreachable branch dressed as care (L041).
+    line = " · ".join(counts)
+    if tags:
+        line = f"{line} — מתוכם {' · '.join(tags)}"
+    L.append(line)
 
     titles = {Verdict.FAIL: "❌ נשבר", Verdict.UNKNOWN: "❓ לא נבדק",
               Verdict.WARN: "⚠️ שווה מבט"}
