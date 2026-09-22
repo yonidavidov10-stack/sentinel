@@ -242,3 +242,25 @@ def test_a_check_still_unknown_is_still_reported(tmp_path):
             "findings": [{"check": "health", "title": "broken",
                           "verdict": "unknown"}]}), encoding="utf-8")
     assert [e["title"] for e in history.never_passed(tmp_path)] == ["broken"]
+
+
+def test_a_check_that_has_failed_is_not_a_suspect(tmp_path):
+    """`_never_passed` means "suspect the check, not the project", and it earns
+    that by finding checks stuck on UNKNOWN — ones their environment cannot
+    answer. A FAIL is an answer. `_no_workflow_always_fails` was named as a
+    suspect nine times while correctly reporting that a workflow had never once
+    succeeded, so one real problem arrived as three findings."""
+    import json
+    from sentinel import history
+
+    hist = tmp_path / ".audit-history"
+    hist.mkdir()
+    for n in range(8):
+        (hist / f"2026091{n}T000000Z.json").write_text(json.dumps({
+            "sent": True, "started_at": f"2026-09-1{n}",
+            "findings": [{"check": "health", "title": "always fails",
+                          "verdict": "fail"},
+                         {"check": "health", "title": "cannot tell",
+                          "verdict": "unknown"}]}), encoding="utf-8")
+    titles = [e["title"] for e in history.never_passed(tmp_path)]
+    assert titles == ["cannot tell"]

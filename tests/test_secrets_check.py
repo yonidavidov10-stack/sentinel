@@ -191,10 +191,18 @@ def test_when_the_secret_list_is_forbidden_it_reads_the_failed_run(
     assert "per-repository" in f.remedy
 
 
-def test_a_failed_run_that_died_of_something_else_is_unknown(
+def test_a_failed_run_that_died_of_something_else_is_skip_not_a_pass(
         tmp_path, monkeypatch):
-    """Not every red run is a missing secret. Claiming one would be a false
-    positive built on top of an unrelated failure."""
+    """Not every red run is a missing secret — claiming one would be a false
+    positive built on an unrelated failure.
+
+    SKIP rather than UNKNOWN, changed deliberately: `gh secret list` is refused
+    with 403 inside Actions, so this branch is the one CI always takes. Left as
+    UNKNOWN it was unanswerable forever — thirteen runs, zero passes, the top
+    line of `_never_passed`. L037 had moved the empty-list branch to SKIP and
+    missed this one, which is the branch that actually runs.
+
+    What must not change: it is not a PASS. Nothing was verified."""
     seq = _Seq(
         (False, "HTTP 403"),
         (True, "999"),
@@ -204,7 +212,8 @@ def test_a_failed_run_that_died_of_something_else_is_unknown(
     monkeypatch.setattr(health, "run", seq)
     findings = []
     health._secrets(_project(tmp_path, WORKFLOW), findings)
-    assert findings[0].verdict is Verdict.UNKNOWN
+    assert findings[0].verdict is Verdict.SKIP
+    assert findings[0].verdict is not Verdict.PASS, "silence must never read as verified"
 
 
 def test_a_green_latest_run_is_skip_not_a_pass(tmp_path, monkeypatch):

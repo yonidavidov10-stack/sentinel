@@ -579,17 +579,25 @@ def _secrets_from_run_history(m: Manifest, findings: list[Finding],
                       "הרשאות אפליקציה הם לכל ריפו בנפרד — ריפו חדש לא יורש "
                       "אף אחד מהם."))
         return
+    # SKIP, NOT UNKNOWN — and this is the branch CI actually takes.
+    #
+    # L037 moved the empty-list case to SKIP and I left this one alone. But
+    # `gh secret list` inside Actions does not return an empty list, it is
+    # REFUSED with 403, so the fix never applied where it was needed: thirteen
+    # runs, zero passes, still the top line of `_never_passed` five days later.
+    #
+    # Fixing the branch that is not taken is the same mistake as testing only
+    # the state you want, one level out.
     findings.append(Finding(
         check=NAME, title=title, title_he=title_he,
-        verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
-        detail="the secret list needs repository admin, which this token does "
-               "not have, and the latest failure was about something else",
-        detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן הזה, והכשל "
-                  "האחרון היה על משהו אחר",
-        evidence=why_not[:300],
-        remedy="Run the audit from a machine whose `gh` is authenticated as "
-               "the repository owner to check this properly.",
-        remedy_he="הרץ את הביקורת ממכונה שה-gh שלה מאומת כבעל הריפו."))
+        verdict=Verdict.SKIP, severity=Severity.MEDIUM,
+        detail="listing secrets needs repository admin, which a workflow token "
+               "cannot have, and no recent run complained about a missing "
+               "credential — checkable from the owner's machine, not here",
+        detail_he="רשימת הסודות דורשת הרשאת אדמין שאין לטוקן של תהליך, ואף "
+                  "ריצה אחרונה לא התלוננה על אישור חסר — ניתן לבדיקה מהמחשב "
+                  "של הבעלים, לא מכאן",
+        evidence=why_not[:300]))
 
 
 # ── claude-code-action: three ways to get it wrong ─────────────────────

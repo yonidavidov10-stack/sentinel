@@ -163,12 +163,30 @@ def never_passed(root: Path, min_runs: int = 6) -> list[dict]:
             entry = seen.setdefault(key, {
                 "check": key[0], "title": key[1],
                 "title_he": f.get("title_he", ""), "runs": 0, "passes": 0,
+                # A FAIL is an ANSWER. See the filter below.
+                "answered": False,
             })
             entry["runs"] += 1
             if verdict == "pass":
                 entry["passes"] += 1
+            if verdict == "fail":
+                entry["answered"] = True
             if not entry["title_he"]:
                 entry["title_he"] = f.get("title_he", "")
+    # A CHECK THAT HAS EVER RETURNED FAIL IS NOT THE SUSPECT.
+    #
+    # This warning means "suspect the check, not the project", and it earns
+    # that by finding checks which can never ANSWER — the ones stuck on UNKNOWN
+    # because they ask something their environment cannot tell them.
+    #
+    # A check returning FAIL has answered. It is reporting a real problem
+    # nobody has fixed, which is `recurring`'s job, and listing it here as well
+    # said the opposite of the truth: `_no_workflow_always_fails` was named as
+    # a suspect nine times while correctly reporting that a workflow had never
+    # once succeeded. One real problem arriving as three findings — the FAIL,
+    # a "suspect this check", and a "this recurs" — is how a report becomes
+    # something people stop reading.
     return sorted(
-        (e for e in seen.values() if e["passes"] == 0 and e["runs"] >= min_runs),
+        (e for e in seen.values()
+         if e["passes"] == 0 and not e["answered"] and e["runs"] >= min_runs),
         key=lambda e: -e["runs"])

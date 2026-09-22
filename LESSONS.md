@@ -119,6 +119,47 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L041 — I fixed the branch that is never taken
+**Found** 2026-09-22, five days after "fixing" it · **status: closed**
+
+The bot's report, verbatim:
+
+> כל סוד שהתהליכים מבקשים קיים בריפו הזה — 13 הרצות, אפס מעברים
+
+L037 moved the secrets check from UNKNOWN to SKIP because a workflow token
+cannot list secrets. The branch it moved was `r.ok and not r.stdout.strip()` —
+an EMPTY list. Inside Actions `gh secret list` is not empty, it is **refused
+with 403**, so `r.ok` is false and control goes somewhere else entirely.
+
+**The branch I fixed is never taken where it matters.** Thirteen runs, zero
+passes, still the top line of `_never_passed` five days later — the warning
+telling me, every morning, that the fix had not landed.
+
+Testing only the state you want has an outer form: **fixing only the branch you
+were looking at.** I had the failing case in front of me — a 403 in the
+evidence of the very finding I was reading — and edited the other one.
+
+**Check:** the test for this branch now pins SKIP, and pins that it is still
+not a PASS.
+
+## And a warning that accused a check of doing its job
+
+> אף תהליך לא נכשל בכל ריצה — 9 הרצות, אפס מעברים
+
+`_no_workflow_always_fails` was correctly reporting that sentinel's improvement
+pass had never once succeeded. `_never_passed` listed it as a suspect anyway,
+because it counted a FAIL as "not a pass".
+
+**A FAIL is an ANSWER.** This warning exists to find checks that can never
+answer — the ones stuck on UNKNOWN because their environment cannot tell them.
+A check returning FAIL is reporting a real problem nobody has fixed, which is
+`recurring`'s job.
+
+So one real problem arrived as three findings: the FAIL itself, a "suspect this
+check", and a "this keeps recurring". **A report that says the same thing three
+ways is how a reader learns to skim all three.** `_never_passed` now ignores any
+check that has ever answered FAIL.
+
 ## L040 — The self-improvement pass never ran once, and nothing said so
 **Found** 2026-09-17, clearing the last findings · **status: closed**
 
