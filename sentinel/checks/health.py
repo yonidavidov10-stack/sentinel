@@ -640,9 +640,26 @@ def _no_workflow_always_fails(m: Manifest, findings: list[Finding]) -> None:
     if not wf_dir.is_dir():
         return
 
+    # A DISABLED WORKFLOW IS A DECISION, NOT A FAILURE. Its last runs stay
+    # failed forever — nothing new will ever run — so without this the check
+    # would report a deliberate choice as a broken promise, every day, with no
+    # way to ever clear it. That is the SKIP-versus-UNKNOWN discipline applied
+    # to a workflow: "we turned this off" is an answer.
+    #
+    # sentinel's own improvement pass was disabled on 2026-09-22 after seven
+    # attempts to give it a usable token; see README. The audit still runs.
+    disabled = set()
+    r_list = run("gh workflow list --all --json name,path,state "
+                 "--jq '.[] | select(.state != \"active\") | .path'",
+                 m.root, timeout_s=60)
+    if r_list.ok:
+        disabled = {Path(x).name for x in r_list.stdout.split() if x}
+
     depth = 4
     always, checked = [], 0
     for f in sorted(wf_dir.glob("*.y*ml")):
+        if f.name in disabled:
+            continue
         r = run(f"gh run list --workflow={f.name} --status completed "
                 f"--limit {depth} --json conclusion --jq '.[].conclusion'",
                 m.root, timeout_s=60)

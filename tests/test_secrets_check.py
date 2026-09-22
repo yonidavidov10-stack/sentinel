@@ -514,3 +514,31 @@ def test_a_young_workflow_is_not_judged(tmp_path, monkeypatch):
     out = []
     health._no_workflow_always_fails(_wfs(tmp_path, "a.yml"), out)
     assert out == []
+
+
+def test_a_disabled_workflow_is_a_decision_not_a_failure(tmp_path, monkeypatch):
+    """Its last runs stay failed forever — nothing new will ever run — so
+    without this the check reports a deliberate choice as a broken promise
+    every day, with no way to ever clear it. sentinel's own improvement pass
+    was disabled on 2026-09-22 after seven attempts to give it a usable token.
+    """
+    class R:
+        def __init__(self, out, ok=True):
+            self.ok, self.stdout, self.output, self.error = ok, out, out, ""
+
+    def fake(cmd, *a, **k):
+        if "gh workflow list" in cmd:
+            return R(".github/workflows/improve.yml")
+        if "--workflow=improve.yml" in cmd:
+            return R("\n".join(["failure"] * 4))
+        if "--workflow=tests.yml" in cmd:
+            return R("\n".join(["success"] * 4))
+        return R("")
+
+    monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(health, "run", fake)
+    out = []
+    health._no_workflow_always_fails(
+        _wfs(tmp_path, "improve.yml", "tests.yml"), out)
+    assert out[0].verdict is Verdict.PASS
+    assert "improve.yml" not in (out[0].evidence or "")

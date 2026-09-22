@@ -164,3 +164,30 @@ in.**
 
 Python 3.11+ (`tomllib`). No dependencies. `gh` is optional — without it, CI
 status reports `UNKNOWN` rather than being skipped.
+
+## The self-improvement pass is off, on purpose
+
+`improve.yml` is **disabled** as of 2026-09-22. It is not broken and it is not
+forgotten — it never had a usable token, and after seven attempts to give it one
+the cost stopped being worth the return.
+
+**What actually failed**, because the shape is worth keeping: the first token
+was rejected, the second saved as an empty string, and then three of the tools
+written to make the third attempt reliable each introduced the next failure — a
+prefix checked against a format invented from memory, a `cat` prompt that needs
+Ctrl-D twice after a paste that does not end in a newline, and a `> file`
+redirect that captured the whole session output rather than the token line. Each
+looked like the user doing something wrong. None was.
+
+**What this costs:** sentinel no longer improves itself unattended. That work
+happens in working sessions instead, which is where it has always actually
+happened — the day this was disabled added six lessons and about forty tests by
+hand.
+
+**What still runs:** the daily audit, all fourteen security checks, the Telegram
+report, the history ledger. Every project audited by this tool is unaffected,
+including stock-predictor, whose own improvement pass runs twice a day and is
+verified working.
+
+To turn it back on: set a working `CLAUDE_CODE_OAUTH_TOKEN` and
+`gh workflow enable improve.yml`.
