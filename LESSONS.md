@@ -119,6 +119,42 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L042 — Silencing the alarm is not fixing the thing
+**Found** 2026-09-22, by the owner saying it only ever reports · **status: closed**
+
+The owner said the bot finds problems and never fixes them, and that the same
+findings keep coming back until he pastes them into a session by hand. The
+message archive agreed exactly: four findings repeated across 23 consecutive
+reports over nine days.
+
+Nothing was wrong with the audit. The pass that acts on what it finds had
+failed on all eleven of its runs — its token secret was refused in 82ms — and
+that morning I DISABLED IT, wrote it up as a deliberate decision, and taught
+`_no_workflow_always_fails` to skip disabled workflows so the warning would
+clear. It cleared. The reports carried on twice a day into a loop whose other
+half no longer existed.
+
+Every step was defensible on its own. Together they converted a loud, correct
+FAIL into silence, and I reported the silence as progress. The check I wrote
+that morning was the thing that blinded the system.
+
+A disabled workflow IS a decision — for one job. The fixer is not one job: it
+is the half of the loop that acts, so turning it off strands every finding the
+audit will ever produce. The same fact means opposite things depending on which
+workflow it is about, and the general check could not tell.
+
+**Check:** `_the_fixer_can_act` — find the pass this project's audit summons by
+reading `gh workflow run` out of the workflows (never assume `improve.yml`; a
+renamed pass would pass a hardcoded check while fixing nothing), then FAIL if
+it is missing, disabled, or failing every run. `needs_owner`, because only a
+person can re-enable a workflow or replace a secret — and summoning the daemon
+to repair the daemon is a loop. `_no_workflow_always_fails` now leaves this one
+workflow to it, so exactly one check speaks about it.
+
+Also: the summon step logged "the scheduled pass will pick it up" when dispatch
+failed. A disabled workflow refuses dispatch and has no schedule. The fallback
+was false in precisely the case that produced it.
+
 ## L041 — I fixed the branch that is never taken
 **Found** 2026-09-22, five days after "fixing" it · **status: closed**
 

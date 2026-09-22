@@ -163,7 +163,7 @@ jobs:
           if python -m sentinel.cli run . --should-fix; then
             echo "::warning::Something here a pass can act on — starting one."
             gh workflow run improve.yml \
-              || echo "::warning::Could not dispatch improve.yml; the scheduled pass will pick it up."
+              || echo "::error::Could not dispatch improve.yml. A disabled workflow refuses dispatch AND has no schedule, so this finding reaches nobody — see the fixer check in the audit above."
           else
             echo "Nothing a pass could fix. The daemon keeps its schedule."
           fi

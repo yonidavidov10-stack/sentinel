@@ -655,6 +655,14 @@ def _no_workflow_always_fails(m: Manifest, findings: list[Finding]) -> None:
     if r_list.ok:
         disabled = {Path(x).name for x in r_list.stdout.split() if x}
 
+    # The pass this audit summons belongs to `_the_fixer_can_act`, which judges
+    # it by a harsher rule: disabled is a FAIL there, because turning the fixer
+    # off strands every finding rather than one job. Two checks reporting the
+    # same workflow would be the exact thing `_recurring` punishes.
+    fixer = _summon_target(m.root)
+    if fixer:
+        disabled.add(fixer)
+
     depth = 4
     always, checked = [], 0
     for f in sorted(wf_dir.glob("*.y*ml")):
@@ -702,6 +710,148 @@ def _no_workflow_always_fails(m: Manifest, findings: list[Finding]) -> None:
         remedy_he="פתח את הריצה האחרונה של כל אחד. תהליך שנכשל זהה כל יום בדרך "
                   "כלל חסר אישור גישה או הרשאה, לא קוד שבור — ובדיקת "
                   "'הריצה האחרונה ירוקה' לא תחשוף את זה."))
+
+
+_SUMMON = re.compile(r"gh\s+workflow\s+run\s+([A-Za-z0-9_.-]+\.ya?ml)")
+
+
+def _summon_target(root: Path) -> str | None:
+    """The workflow this project's audit starts when it finds something.
+
+    Read out of the workflows rather than assumed to be `improve.yml`, because
+    a check that hardcodes the name of the thing it is checking will pass on a
+    project that renamed it and quietly stopped fixing anything.
+    """
+    wf_dir = root / ".github" / "workflows"
+    if not wf_dir.is_dir():
+        return None
+    for f in sorted(wf_dir.glob("*.y*ml")):
+        hit = _SUMMON.search(f.read_text(encoding="utf-8", errors="ignore"))
+        if hit:
+            return hit.group(1)
+    return None
+
+
+def _the_fixer_can_act(m: Manifest, findings: list[Finding]) -> None:
+    """Is the pass this audit summons actually able to run?
+
+    WRITTEN AFTER THE OWNER SAID THE SYSTEM ONLY EVER REPORTS. It did, and the
+    data agreed: four findings repeated in 23 consecutive messages over nine
+    days. The audit was working perfectly. The thing that fixes what it finds
+    had failed on all eleven of its runs — the token secret was rejected in
+    82ms — and was then DISABLED on 2026-09-22.
+
+    Both halves were invisible. Disabling it is precisely what silenced the
+    alarm: `_no_workflow_always_fails` skips disabled workflows, correctly,
+    because a workflow somebody turned off is a decision. But the FIXER is not
+    an ordinary workflow. Turning it off does not stop one job; it strands
+    EVERY finding this audit will ever produce, with no one left to act on any
+    of them. The audit keeps sending a report twice a day into a loop whose
+    other half no longer exists.
+
+    So a disabled or permanently failing fixer is a FAIL here even though it is
+    a SKIP there, and `_no_workflow_always_fails` now leaves this workflow to
+    this check so that exactly one of them speaks about it.
+
+    `needs_owner`: re-enabling a workflow and replacing a secret are owner
+    actions — and summoning the daemon to repair the daemon is a loop.
+    """
+    title = "The pass that fixes these findings can run"
+    title_he = "הפאס שמתקן את הממצאים האלה מסוגל לרוץ"
+
+    if not which("gh"):
+        return
+    target = _summon_target(m.root)
+    if target is None:
+        # A real design, not an omission: this project reports to a person and
+        # nobody claimed otherwise. fundamental-engine is one.
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.SKIP,
+            severity=Severity.HIGH,
+            detail="this audit summons no pass — its findings are for a "
+                   "person to act on",
+            detail_he="הביקורת הזו לא מזמנת פאס — הממצאים שלה מיועדים לאדם"))
+        return
+
+    r = run("gh workflow list --all --json path,state "
+            "--jq '.[] | \"\\(.path) \\(.state)\"'", m.root, timeout_s=60)
+    if not r.ok:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.HIGH,
+            detail=f"could not ask GitHub whether {target} is enabled",
+            detail_he=f"לא הצלחתי לברר מול GitHub אם {target} מופעל",
+            evidence=r.stderr[:200],
+            remedy="Run `gh workflow list --all` here and check `gh auth "
+                   "status`.",
+            remedy_he="הרץ כאן `gh workflow list --all` ובדוק `gh auth status`."))
+        return
+
+    state = None
+    for line in r.stdout.splitlines():
+        path, _, st = line.rpartition(" ")
+        if Path(path.strip()).name == target:
+            state = st.strip()
+            break
+
+    if state is None:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL, needs_owner=True,
+            detail=f"the audit summons {target}, and GitHub has no such "
+                   f"workflow — every finding here is reported to nobody",
+            detail_he=f"הביקורת מזמנת את {target}, ול-GitHub אין תהליך כזה — "
+                      f"כל ממצא כאן מדווח ולא מגיע לאף אחד",
+            remedy=f"Either add {target} or stop summoning it.",
+            remedy_he=f"או שתוסיף את {target}, או שתפסיק לזמן אותו."))
+        return
+
+    if state != "active":
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL, needs_owner=True,
+            detail=f"{target} is {state} — this audit still reports twice a "
+                   f"day and nothing can act on what it finds",
+            detail_he=f"{target} במצב {state} — הביקורת ממשיכה לדווח פעמיים "
+                      f"ביום ואין מי שיפעל על מה שהיא מוצאת",
+            evidence=f"{target}: {state}",
+            remedy=f"`gh workflow enable {target}` once whatever stopped it is "
+                   f"fixed — or, if it is meant to stay off, stop summoning it "
+                   f"so the report says so instead of implying a fixer exists.",
+            remedy_he=f"`gh workflow enable {target}` אחרי שמתקנים את הסיבה "
+                      f"שעצרה אותו — או, אם הוא אמור להישאר כבוי, להפסיק "
+                      f"לזמן אותו, כדי שהדוח יגיד את זה במקום לרמוז שיש מתקן."))
+        return
+
+    depth = 4
+    rr = run(f"gh run list --workflow={target} --status completed "
+             f"--limit {depth} --json conclusion --jq '.[].conclusion'",
+             m.root, timeout_s=60)
+    results = [x for x in rr.stdout.split()
+               if x not in ("cancelled", "skipped", "stale", "neutral")] \
+        if rr.ok else []
+
+    if len(results) >= depth and all(x == "failure" for x in results):
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.CRITICAL, needs_owner=True,
+            detail=f"{target} is enabled but failed all of its last "
+                   f"{len(results)} runs — findings are being reported into a "
+                   f"pass that never starts",
+            detail_he=f"{target} מופעל אבל נכשל בכל {len(results)} הריצות "
+                      f"האחרונות — הממצאים מדווחים לפאס שלא מתחיל בכלל",
+            evidence=f"{target}: last {len(results)} runs all failed",
+            remedy="A pass that dies in under a second is being refused, not "
+                   "crashing: check its token secret first.",
+            remedy_he="פאס שמת בפחות משנייה נדחה, לא קרס: בדוק קודם את סוד "
+                      "הטוקן שלו."))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+        severity=Severity.HIGH,
+        detail=f"{target} is active",
+        detail_he=f"{target} פעיל"))
 
 
 def _claude_action(m: Manifest, findings: list[Finding]) -> None:
@@ -983,7 +1133,7 @@ def check(m: Manifest) -> CheckResult:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
         for step in (_tests, _ci, _ci_status, _no_workflow_always_fails,
-                     _secrets, _claude_action,
+                     _the_fixer_can_act, _secrets, _claude_action,
                      _ignored_but_tracked, _manifest_shrank, _git,
                      _recurring, _never_passed, _improvements):
             try:

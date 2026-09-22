@@ -542,3 +542,117 @@ def test_a_disabled_workflow_is_a_decision_not_a_failure(tmp_path, monkeypatch):
         _wfs(tmp_path, "improve.yml", "tests.yml"), out)
     assert out[0].verdict is Verdict.PASS
     assert "improve.yml" not in (out[0].evidence or "")
+
+
+# ── the fixer itself ───────────────────────────────────────────────────
+#
+# THE MISS THESE EXIST FOR. The owner said the system only ever reports, and
+# the message archive agreed: four findings repeated across 23 consecutive
+# reports over nine days. Nothing was broken in the audit. The pass that acts
+# on what it finds had failed all eleven of its runs and was then disabled —
+# and disabling it is what removed the last alarm, because a disabled workflow
+# is correctly a SKIP everywhere else.
+
+def _fixer(tmp_path, monkeypatch, *, summons="improve.yml",
+           listed=("improve.yml", "active"), runs=("success",) * 4,
+           list_ok=True):
+    class R:
+        def __init__(self, out, ok=True, err=""):
+            self.ok, self.stdout, self.output, self.error = ok, out, out, ""
+            self.stderr = err
+
+    def fake(cmd, *a, **k):
+        if "gh workflow list" in cmd:
+            if not list_ok:
+                return R("", ok=False, err="gh: not authenticated")
+            if listed is None:
+                return R("")
+            return R(f".github/workflows/{listed[0]} {listed[1]}")
+        if "gh run list" in cmd:
+            return R("\n".join(runs))
+        return R("")
+
+    monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(health, "run", fake)
+
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    body = "on: schedule\n"
+    if summons:
+        body += f"        run: gh workflow run {summons}\n"
+    (wf / "audit.yml").write_text(body, encoding="utf-8")
+    out = []
+    health._the_fixer_can_act(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    return out[0]
+
+
+def test_a_disabled_fixer_is_a_fail_not_a_skip(tmp_path, monkeypatch):
+    """The whole point. Turning off an ordinary workflow stops one job;
+    turning off the fixer strands every finding the audit will ever produce,
+    while the report keeps arriving twice a day as if someone were acting."""
+    f = _fixer(tmp_path, monkeypatch, listed=("improve.yml", "disabled_manually"))
+    assert f.verdict is Verdict.FAIL
+    assert f.severity is Severity.CRITICAL
+    assert f.needs_owner is True          # only a person can re-enable it
+    assert "disabled_manually" in f.detail
+
+
+def test_an_active_fixer_passes(tmp_path, monkeypatch):
+    assert _fixer(tmp_path, monkeypatch).verdict is Verdict.PASS
+
+
+def test_an_audit_that_summons_nobody_skips(tmp_path, monkeypatch):
+    """THE BRANCH NO PROJECT HERE TAKES. Reporting to a person is a real
+    design, not an omission — but it is a decision, so it is a SKIP, and it
+    has to be exercised somewhere or it is untested code (L041)."""
+    f = _fixer(tmp_path, monkeypatch, summons=None)
+    assert f.verdict is Verdict.SKIP
+    assert "person" in f.detail
+
+
+def test_summoning_a_workflow_that_does_not_exist_fails(tmp_path, monkeypatch):
+    f = _fixer(tmp_path, monkeypatch, listed=None)
+    assert f.verdict is Verdict.FAIL
+    assert f.needs_owner is True
+
+
+def test_a_fixer_that_fails_every_run_fails(tmp_path, monkeypatch):
+    """Enabled is not the same as working: eleven runs, all refused in 82ms."""
+    f = _fixer(tmp_path, monkeypatch, runs=("failure",) * 4)
+    assert f.verdict is Verdict.FAIL
+    assert f.needs_owner is True
+    assert "token" in f.remedy
+
+
+def test_the_target_is_read_from_the_code_not_assumed(tmp_path, monkeypatch):
+    """A check that hardcodes `improve.yml` passes on a project that renamed
+    its pass and silently stopped fixing anything."""
+    f = _fixer(tmp_path, monkeypatch, summons="repair.yml",
+               listed=("repair.yml", "disabled_inactivity"))
+    assert f.verdict is Verdict.FAIL
+    assert "repair.yml" in f.detail
+
+
+def test_unknown_when_github_cannot_be_asked(tmp_path, monkeypatch):
+    """UNKNOWN is never a pass — and never needs_owner either, since asking
+    GitHub again is something the daemon can do."""
+    f = _fixer(tmp_path, monkeypatch, list_ok=False)
+    assert f.verdict is Verdict.UNKNOWN
+    assert f.needs_owner is False
+
+
+def test_the_fixer_is_reported_by_exactly_one_check(tmp_path, monkeypatch):
+    """Two checks naming the same workflow is the pattern `_recurring`
+    punishes: it trains the reader to skim the section that matters."""
+    _runs(monkeypatch, {"improve.yml": ["failure"] * 4})
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    (wf / "improve.yml").write_text("on: workflow_dispatch\n", encoding="utf-8")
+    (wf / "audit.yml").write_text(
+        "on: schedule\n        run: gh workflow run improve.yml\n",
+        encoding="utf-8")
+    out = []
+    health._no_workflow_always_fails(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    assert all("improve.yml" not in (f.evidence or "") for f in out)
