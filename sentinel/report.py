@@ -161,7 +161,12 @@ def to_dict(audit: Audit) -> dict:
              "evidence": f.evidence, "remedy": f.remedy,
              # Stored too, so a later reader — the recurring-finding check, the
              # daemon — can name a past finding in the report's own language.
-             "title_he": f.title_he, "remedy_he": f.remedy_he}
+             "title_he": f.title_he, "remedy_he": f.remedy_he,
+             # WITHOUT THIS THE ARCHIVE LIES BY OMISSION. A pass reads the last
+             # sixty messages to see what keeps repeating; a finding only its
+             # owner could ever have closed looks, from the history alone,
+             # exactly like one the pass ignored for a fortnight.
+             "needs_owner": f.needs_owner}
             for f in audit.findings
         ],
     }

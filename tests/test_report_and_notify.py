@@ -368,3 +368,16 @@ def test_a_report_with_no_security_findings_says_nothing_about_security():
                           detail="d", detail_he="פ")])])
     msg = telegram.format_audit(a)
     assert "🔒" not in msg
+
+
+def test_the_archive_records_who_can_close_a_finding():
+    """A pass reads past messages to find what repeats. A needs_owner finding
+    that stood open for a fortnight is not a pass ignoring its work — but
+    without this field the history cannot tell the two apart."""
+    a = audit(Finding(check="c", title="owner only", verdict=Verdict.FAIL,
+                      severity=Severity.CRITICAL, detail="rotate it",
+                      needs_owner=True),
+              Finding(check="c", title="mine", verdict=Verdict.FAIL,
+                      severity=Severity.CRITICAL, detail="fix it"))
+    got = {f["title"]: f["needs_owner"] for f in to_dict(a)["findings"]}
+    assert got == {"owner only": True, "mine": False}
