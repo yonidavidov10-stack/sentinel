@@ -351,7 +351,7 @@ def test_security_findings_are_marked_in_the_body():
 
 def test_the_summary_line_counts_security_separately():
     msg = telegram.format_audit(_mixed_audit())
-    assert "🔒 1 אבטחה" in msg.splitlines()[2]
+    assert "🔒 1 אבטחה" in _counts_line(msg)
 
 
 def test_a_report_with_no_security_findings_says_nothing_about_security():
@@ -389,8 +389,22 @@ def test_the_archive_records_who_can_close_a_finding():
 # Two counts of different kinds, joined by the same separator, read as two
 # problems. A correct report nobody understands has failed.
 
+def _counts_line(msg: str) -> str:
+    """The summary line, found by CONTENT rather than by index.
+
+    It was `splitlines()[2]`, and adding a timestamp above it broke five
+    tests at once — each asserting something true, all of them pinned to a
+    position instead of to the thing they meant.
+    """
+    for line in msg.splitlines():
+        if line[:2] in ("❌", "❓", "⚠️", "🔒", "👤") or \
+                line.startswith(("❌", "❓", "⚠️", "🔒", "👤")):
+            return line
+    raise AssertionError(f"no summary line in:\n{msg}")
+
+
 def _summary(*findings) -> str:
-    return telegram.format_audit(audit(*findings)).splitlines()[2]
+    return _counts_line(telegram.format_audit(audit(*findings)))
 
 
 def test_a_tag_is_shown_as_a_subset_not_another_problem():
@@ -427,3 +441,40 @@ def test_a_tag_never_appears_without_a_count_to_hang_it_on():
     assert line.startswith("⚠️")
     assert "🔒" in line and "מתוכם" in line
     assert not line.lstrip().startswith("—")
+
+
+# ── when, and on what ──────────────────────────────────────────────────
+
+def test_the_message_says_when_it_was_written_and_about_what():
+    """A red suite at 07:40 was fixed at 07:46; the 07:41 message arrived
+    after. The owner read a description of a commit superseded twice, with
+    nothing in the text to say so, while being told it was fixed. The message
+    was true when written and had no way of saying when that was."""
+    a = audit(FAIL)
+    head = a.head
+    line = telegram.format_audit(a).splitlines()[2]  # the stamp
+    assert "UTC" in line
+    assert a.started_at[:10] in line
+    if head:                    # absent only outside a git checkout
+        assert head in line
+
+
+def test_head_is_read_without_shelling_out(monkeypatch):
+    """A notifier that starts a subprocess to render one line can fail in a
+    way that loses the whole message."""
+    import subprocess
+    def boom(*a, **k):
+        raise AssertionError("format_audit shelled out")
+    monkeypatch.setattr(subprocess, "run", boom)
+    monkeypatch.setattr(subprocess, "check_output", boom)
+    monkeypatch.setattr(subprocess, "Popen", boom)
+    assert telegram.format_audit(audit(FAIL)) is not None
+
+
+def test_an_unreadable_git_dir_loses_the_sha_not_the_message(tmp_path):
+    """"" beats a traceback: the report still has to reach its reader."""
+    from sentinel.report import Audit
+    m = Manifest(path=tmp_path / "SENTINEL.toml", name="d", purpose="p")
+    a = Audit(manifest=m, results=[CheckResult(name="intent", findings=[FAIL])])
+    assert a.head == ""
+    assert telegram.format_audit(a) is not None

@@ -54,6 +54,34 @@ class Audit:
         return 0
 
     @property
+    def head(self) -> str:
+        """The commit this audit looked at, short, or "" if unreadable.
+
+        Read from `.git` rather than shelled out: the reporter needs it to
+        stamp a message, and a notifier that starts a subprocess to render a
+        line can fail in a way that loses the whole message.
+        """
+        try:
+            g = self.manifest.root / ".git"
+            if g.is_file():                       # worktree: .git is a pointer
+                g = (self.manifest.root /
+                     g.read_text(encoding="utf-8").split(":", 1)[1].strip())
+            ref = (g / "HEAD").read_text(encoding="utf-8").strip()
+            if ref.startswith("ref: "):
+                name = ref[5:]
+                p = g / name
+                if p.is_file():
+                    return p.read_text(encoding="utf-8").strip()[:9]
+                for line in (g / "packed-refs").read_text(
+                        encoding="utf-8").splitlines():
+                    if line.endswith(" " + name):
+                        return line.split(" ", 1)[0][:9]
+                return ""
+            return ref[:9]
+        except Exception:                                   # noqa: BLE001
+            return ""
+
+    @property
     def headline(self) -> str:
         bits = [f"{self.count(v)} {v.value}" for v in ORDER if self.count(v)]
         return " · ".join(bits) or "nothing checked"

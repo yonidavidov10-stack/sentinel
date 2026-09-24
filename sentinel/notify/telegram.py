@@ -156,6 +156,25 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
     # a bug report about it — and once several projects report here, the
     # distinction is the whole point of the line.
     L = [f"🛠 <b>Bug Fixer</b>({_esc(audit.manifest.name)})", ""]
+
+    # WHEN, AND ON WHAT. A report with no timestamp cannot be told apart from
+    # a current one, and the reader has no way to know which.
+    #
+    # It happened on 2026-09-24: a red suite at 07:40 was fixed at 07:46, and
+    # the 07:41 message arrived afterwards. The owner read a description of a
+    # commit that had already been superseded twice, with nothing in the text
+    # to say so, while being told the thing was fixed. That is the reporting
+    # defect, not a delivery delay — the message was true when written and had
+    # no way of saying when that was.
+    #
+    # The SHA does the heavier lifting of the two: "tests failed" is about a
+    # particular commit, and naming it lets a reader check in one command
+    # whether it is still HEAD.
+    stamp = (audit.started_at or "")[:16].replace("T", " ")
+    head = audit.head
+    where = f" · <code>{_esc(head)}</code>" if head else ""
+    if stamp:
+        L += [f"<i>{_esc(stamp)} UTC{where}</i>", ""]
     # TWO KINDS OF COUNT, AND THEY MUST NOT LOOK ALIKE. ❌ ❓ ⚠️ partition the
     # findings; 🔒 and 👤 are TAGS ON THOSE SAME findings. Joined by one " · "
     # they read as separate problems: the owner was sent "❌ 1 נשברו · 👤 1
