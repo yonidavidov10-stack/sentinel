@@ -124,49 +124,33 @@ jobs:
           done
           exit 1
 
-      # FOUND AND FIXED, not found and filed. A broken promise found now would
-      # otherwise wait for tomorrow's pass; the daemon reads the audit before it
-      # does anything else, so a genuine ❌ summons it immediately.
+      # NO SUMMON HERE, AND THAT IS THE DECISION, NOT AN OMISSION.
       #
-      # ONLY FROM THE CRON RUN. This workflow is also triggered by the daemon
-      # finishing, and letting THAT summon the daemon would loop forever:
-      # improve → audit → improve. Gating on `schedule` breaks the cycle.
-      # SUMMON THE DAEMON ON WHAT IT CAN ACTUALLY FIX.
+      # Every other audited project starts its self-improvement pass from this
+      # point. sentinel does not, for a reason specific to being the auditor:
+      # the other projects check this repository out at `main`, UNPINNED, on
+      # every audit and every pass. A pass here that edited a check and pushed
+      # would change the standard every project is judged by, within minutes,
+      # with nobody having read the diff.
       #
-      # This used to gate on `exit == 1`, a promise BROKEN. Every UNKNOWN and
-      # every WARN exits 2 and woke nobody — so a finding could be reported
-      # every morning for a week while the one thing able to act on it was
-      # never told. The owner saw the same message daily and reasonably
-      # concluded the system only reports.
+      # It is the rule the passes already live under — "a pass that can edit
+      # the standard it is measured by is not being measured" — one level up.
+      # There, SENTINEL.toml is off limits. Here, every file is somebody's
+      # SENTINEL.toml.
       #
-      # `--should-fix` answers a different question, in the exit code: is there
-      # something here a pass could act on? A FAIL, yes, immediately. A WARN or
-      # UNKNOWN only once it has RECURRED and is still open — one report is
-      # information, five is a failure of the loop.
+      # The evidence agrees. improve.yml failed all eleven of its runs and was
+      # disabled on 2026-09-22, so nothing measurable is being given up; the
+      # 280 tests and 42 lessons in this repo were all written in reviewed
+      # sessions, which is the mechanism that has actually worked.
       #
-      # And never for a finding marked `needs_owner`: rotating a credential,
-      # plugging in a drive, editing a workflow the pass may not touch. Waking
-      # it for work it is forbidden to do is how a fixing loop becomes an
-      # expensive reporting loop.
-      - name: Summon the daemon if there is something it can fix
-        # NOT 'schedule' ONLY. The loop this must break is
-        # improve → audit → improve, and that loop runs through `workflow_run`
-        # — so blocking that one event is enough. Gating on `schedule` also
-        # blocked `workflow_dispatch`, which meant the summon path could never
-        # be exercised on demand, and a control nobody can run is a control
-        # nobody has verified. Asked to prove the daemon wakes, the honest
-        # answer was "I cannot make it try".
-        if: github.event_name != 'workflow_run'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if python -m sentinel.cli run . --should-fix; then
-            echo "::warning::Something here a pass can act on — starting one."
-            gh workflow run improve.yml \
-              || echo "::error::Could not dispatch improve.yml. A disabled workflow refuses dispatch AND has no schedule, so this finding reaches nobody — see the fixer check in the audit above."
-          else
-            echo "Nothing a pass could fix. The daemon keeps its schedule."
-          fi
+      # `_the_fixer_can_act` reads this file for `gh workflow run` and now
+      # finds none, so it reports SKIP — "this audit summons no pass, its
+      # findings are for a person" — instead of ❌ twice a day about a fixer
+      # that is off. That is the SKIP-versus-UNKNOWN discipline: a decision is
+      # an answer.
+      #
+      # TO REVERSE: restore the summon step (see stock-predictor's audit.yml,
+      # which still has it) and give improve.yml a token that is not refused.
 
       # ADVANCE THE HISTORY LEDGER, and only after a clean audit.
       #

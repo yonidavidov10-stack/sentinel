@@ -138,9 +138,16 @@ def test_both_audit_workflows_use_the_flag():
         if not wf.is_file():
             continue
         text = wf.read_text(encoding="utf-8")
+        # sentinel's own summon was REMOVED on 2026-09-24 — every project
+        # checks this repo out at `main`, unpinned, so a pass here would
+        # change the standard they are all judged by without review. A
+        # workflow that summons nothing has no gate to get wrong; requiring
+        # the flag anyway would turn a documented decision into a red suite.
+        if "Summon the daemon" not in text:
+            continue
         assert "--should-fix" in text, f"{wf} still gates on the exit code"
         checked += 1
-    assert checked, "no audit workflow found"
+    assert checked, "no audit workflow summons a pass at all"
 
 
 def test_a_recurring_warning_is_deliberately_not_enough(tmp_path):
@@ -176,13 +183,15 @@ def test_the_summon_step_can_be_exercised_on_demand():
         if not wf.is_file():
             continue
         text = wf.read_text(encoding="utf-8")
+        if "Summon the daemon" not in text:
+            continue                       # summons nothing — see above
         summon = text[text.index("Summon the daemon"):]
         gate = summon[summon.index("if:"):summon.index("\n", summon.index("if:"))]
         assert "workflow_run" in gate, f"{wf}: the improve→audit→improve loop is open"
         assert "== 'schedule'" not in gate, \
             f"{wf}: gated on schedule, so the summon path cannot be tested"
         checked += 1
-    assert checked, "no audit workflow found"
+    assert checked, "no audit workflow summons a pass at all"
 
 
 def test_should_fix_prints_nothing(capsys, tmp_path, monkeypatch):

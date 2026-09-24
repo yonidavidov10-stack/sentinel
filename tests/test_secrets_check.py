@@ -656,3 +656,23 @@ def test_the_fixer_is_reported_by_exactly_one_check(tmp_path, monkeypatch):
     health._no_workflow_always_fails(
         Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
     assert all("improve.yml" not in (f.evidence or "") for f in out)
+
+
+def test_a_summon_in_a_comment_is_not_a_summon(tmp_path, monkeypatch):
+    """The step that documents a REMOVED summon quotes the command it removed.
+    Reading that as live would report a fixer this project no longer has."""
+    class R:
+        ok, stdout, output, error, stderr = True, "", "", "", ""
+    monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(health, "run", lambda *a, **k: R())
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    (wf / "audit.yml").write_text(
+        "on: schedule\n"
+        "      # TO REVERSE: restore `gh workflow run improve.yml` here.\n"
+        "      - run: echo done   # was: gh workflow run improve.yml\n",
+        encoding="utf-8")
+    out = []
+    health._the_fixer_can_act(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    assert out[0].verdict is Verdict.SKIP

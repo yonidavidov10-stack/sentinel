@@ -726,9 +726,16 @@ def _summon_target(root: Path) -> str | None:
     if not wf_dir.is_dir():
         return None
     for f in sorted(wf_dir.glob("*.y*ml")):
-        hit = _SUMMON.search(f.read_text(encoding="utf-8", errors="ignore"))
-        if hit:
-            return hit.group(1)
+        for line in f.read_text(encoding="utf-8", errors="ignore").splitlines():
+            # COMMENTS ARE NOT CODE. The step that documents why a summon was
+            # REMOVED naturally quotes the command it removed; reading that as
+            # a live summon would have this check report a fixer that no
+            # longer exists — passing, or failing, for the wrong reason.
+            if line.lstrip().startswith("#"):
+                continue
+            hit = _SUMMON.search(line.split(" #")[0])
+            if hit:
+                return hit.group(1)
     return None
 
 
