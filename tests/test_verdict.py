@@ -77,3 +77,43 @@ def test_unknown_outranks_warn():
 def test_every_verdict_has_an_icon():
     for v in Verdict:
         assert v.icon
+
+
+# ── every 👤 says why ──────────────────────────────────────────────────
+
+def test_every_needs_owner_site_explains_itself():
+    """THE OWNER ASKED "למה הוא תמיד רושם ממתין לך, שיעשה לבד" AND THE REPORT
+    HAD NO ANSWER IN IT.
+
+    A boundary stated without a reason reads as the tool being lazy, so a
+    person pushes back on all of them instead of the wrong ones. Checked by
+    reading the source rather than by running the checks, because most of
+    these branches need a broken project to reach — the next one added would
+    otherwise ship a bare 👤 and nobody would notice until it was sent.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parent.parent / "sentinel"
+    bare = []
+    for f in sorted(root.rglob("*.py")):
+        tree = ast.parse(f.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            kw = {k.arg: k.value for k in node.keywords if k.arg}
+            owner = kw.get("needs_owner")
+            if not (isinstance(owner, ast.Constant) and owner.value is True):
+                continue
+            why = kw.get("owner_reason_he")
+            text = ast.literal_eval(why) if isinstance(
+                why, ast.Constant) else (
+                "".join(ast.literal_eval(v) for v in why.values)
+                if isinstance(why, ast.JoinedStr) and all(
+                    isinstance(v, ast.Constant) for v in why.values)
+                else "?" if why is not None else "")
+            if len(text.strip()) < 10:
+                bare.append(f"{f.name}:{node.lineno}")
+
+    assert not bare, ("needs_owner without a reason the owner can read: "
+                      + ", ".join(bare))

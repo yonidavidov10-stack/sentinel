@@ -166,7 +166,8 @@ def to_dict(audit: Audit) -> dict:
              # sixty messages to see what keeps repeating; a finding only its
              # owner could ever have closed looks, from the history alone,
              # exactly like one the pass ignored for a fortnight.
-             "needs_owner": f.needs_owner}
+             "needs_owner": f.needs_owner,
+             "owner_reason_he": f.owner_reason_he}
             for f in audit.findings
         ],
     }

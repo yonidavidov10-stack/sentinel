@@ -237,7 +237,8 @@ def format_audit(audit: Audit, clean_streak: int = 0) -> str | None:
             # credential, plug in a drive, change an account setting, or
             # un-publish what is already public.
             if f.needs_owner:
-                L.append("  👤 <i>ממתין לך — הדמון לא יכול לגעת בזה</i>")
+                why = f.owner_reason_he or "הדמון לא יכול לגעת בזה"
+                L.append(f"  👤 <i>ממתין לך — {_esc(why)}</i>")
 
     if by_verdict[Verdict.UNKNOWN]:
         L.append("")

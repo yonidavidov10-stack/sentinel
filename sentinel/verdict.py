@@ -87,6 +87,19 @@ class Finding:
     # True means: NOTHING WILL HAPPEN UNTIL A HUMAN ACTS.
     needs_owner: bool = False
 
+    # WHY it is theirs, in four Hebrew words, shown on the 👤 line.
+    #
+    # The owner asked "למה הוא תמיד רושם ממתין לך, שיעשה לבד" — and the report
+    # had no answer in it. "הדמון לא יכול לגעת בזה" states a limit without a
+    # reason, which reads as the tool being lazy rather than the task being
+    # outside it. A person cannot agree or disagree with a boundary nobody
+    # explained, so they push back on all of them.
+    #
+    # Each site fills this in, because the reason differs and only the check
+    # knows it: a secret, an account setting, a physical drive, or a file the
+    # pass is forbidden to edit so that it cannot widen its own permissions.
+    owner_reason_he: str = ""
+
     # Hebrew renderings, used by the Telegram reporter. EXPLICIT FIELDS rather
     # than a lookup keyed on the English title: a translation table matched by
     # string breaks silently the moment someone rewords a title, and the report

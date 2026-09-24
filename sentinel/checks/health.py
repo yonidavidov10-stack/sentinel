@@ -798,6 +798,8 @@ def _the_fixer_can_act(m: Manifest, findings: list[Finding]) -> None:
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
             severity=Severity.CRITICAL, needs_owner=True,
+            owner_reason_he="עריכת .github/workflows אסורה לפאס — אחרת הוא "
+                            "יכול להרחיב לעצמו הרשאות",
             detail=f"the audit summons {target}, and GitHub has no such "
                    f"workflow — every finding here is reported to nobody",
             detail_he=f"הביקורת מזמנת את {target}, ול-GitHub אין תהליך כזה — "
@@ -810,17 +812,24 @@ def _the_fixer_can_act(m: Manifest, findings: list[Finding]) -> None:
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
             severity=Severity.CRITICAL, needs_owner=True,
+            owner_reason_he="הפעלת workflow היא פעולת חשבון, והדמון הזה הוא "
+                            "בדיוק ה-workflow הכבוי — הוא לא יכול להדליק את "
+                            "עצמו",
             detail=f"{target} is {state} — this audit still reports twice a "
                    f"day and nothing can act on what it finds",
             detail_he=f"{target} במצב {state} — הביקורת ממשיכה לדווח פעמיים "
                       f"ביום ואין מי שיפעל על מה שהיא מוצאת",
             evidence=f"{target}: {state}",
-            remedy=f"`gh workflow enable {target}` once whatever stopped it is "
-                   f"fixed — or, if it is meant to stay off, stop summoning it "
-                   f"so the report says so instead of implying a fixer exists.",
-            remedy_he=f"`gh workflow enable {target}` אחרי שמתקנים את הסיבה "
-                      f"שעצרה אותו — או, אם הוא אמור להישאר כבוי, להפסיק "
-                      f"לזמן אותו, כדי שהדוח יגיד את זה במקום לרמוז שיש מתקן."))
+            remedy=f"FIX THE CAUSE FIRST, then `gh workflow enable {target}` — "
+                   f"enabling it while the cause stands just restores a "
+                   f"workflow that fails every run. If it is meant to stay "
+                   f"off, stop summoning it instead, so the report says there "
+                   f"is no fixer rather than implying a broken one.",
+            remedy_he=f"קודם תקן את הסיבה שעצרה אותו, ורק אז "
+                      f"`gh workflow enable {target}` — הפעלה לפני כן רק "
+                      f"מחזירה תהליך שנכשל בכל ריצה. אם הוא אמור להישאר כבוי, "
+                      f"עדיף להפסיק לזמן אותו, כדי שהדוח יגיד שאין מתקן במקום "
+                      f"לרמוז שיש אחד שבור."))
         return
 
     depth = 4
@@ -835,6 +844,8 @@ def _the_fixer_can_act(m: Manifest, findings: list[Finding]) -> None:
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
             severity=Severity.CRITICAL, needs_owner=True,
+            owner_reason_he="סוד שנדחה מוחלף רק דרך הגדרות הריפו, ורק לך יש "
+                            "את הערך",
             detail=f"{target} is enabled but failed all of its last "
                    f"{len(results)} runs — findings are being reported into a "
                    f"pass that never starts",
