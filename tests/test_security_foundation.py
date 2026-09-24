@@ -159,8 +159,10 @@ def test_an_empty_list_is_a_real_answer(tmp_path):
     unknown and learn to ignore the section."""
     f = _one(security._irreplaceable_has_a_second_copy,
              _project(tmp_path, sec={"irreplaceable": [], "second_copy": "n/a"}))
-    assert f[0].verdict is Verdict.UNKNOWN, \
-        "an empty list with no paths is still 'not answered' today"
+    assert f[0].verdict is Verdict.SKIP, \
+        "a declared empty list is an ANSWER, not a missing one"
+    assert not f[0].verdict.is_actionable, \
+        "a decision must not keep asking to be decided"
 
 
 def test_declared_but_no_second_copy_warns_at_critical(tmp_path):

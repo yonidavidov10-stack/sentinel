@@ -268,7 +268,27 @@ def _irreplaceable_has_a_second_copy(m: Manifest,
     title = "What cannot be recreated exists in more than one place"
     title_he = "מה שאי אפשר לשחזר קיים ביותר ממקום אחד"
 
-    declared = m.security.get("irreplaceable") or []
+    # `or []` HERE MADE THE REMEDY A LIE. It collapsed an absent key and a
+    # declared empty list into the same falsy value, so a project that did
+    # exactly what the remedy asks — write `irreplaceable = []`, meaning
+    # "everything here regenerates" — was told again, every audit, that it had
+    # not answered. Found 2026-09-24 on the first project where the honest
+    # answer was genuinely nothing.
+    #
+    # It is this tool's own central distinction, broken in its own code:
+    # "nobody looked" and "we looked and the answer is none" are different
+    # facts, and only the first is actionable.
+    declared = m.security.get("irreplaceable")
+    if declared is not None and not declared:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.SKIP, severity=Severity.HIGH,
+            detail="declared: nothing here is irreplaceable — all of it "
+                   "rebuilds from the code",
+            detail_he="הוצהר: אין כאן דבר בלתי ניתן לשחזור — הכל נבנה מחדש "
+                      "מהקוד"))
+        return
+
     if not declared:
         findings.append(Finding(
             check=NAME, title=title, title_he=title_he,
