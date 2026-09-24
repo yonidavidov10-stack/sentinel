@@ -676,3 +676,69 @@ def test_a_summon_in_a_comment_is_not_a_summon(tmp_path, monkeypatch):
     health._the_fixer_can_act(
         Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
     assert out[0].verdict is Verdict.SKIP
+
+
+# ── a pin nobody bumps ─────────────────────────────────────────────────
+
+def _pinned(tmp_path, monkeypatch, body, *, ahead="0", ok=True):
+    class R:
+        def __init__(self):
+            self.ok, self.stdout, self.output = ok, ahead, ahead
+            self.error, self.stderr = "", "gh: no answer"
+    monkeypatch.setattr(health, "which", lambda _: "/usr/bin/gh")
+    monkeypatch.setattr(health, "run", lambda *a, **k: R())
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True, exist_ok=True)
+    for i, text in enumerate(body):
+        (wf / f"w{i}.yml").write_text(text, encoding="utf-8")
+    out = []
+    health._the_auditor_pin_is_current(
+        Manifest(path=tmp_path / "SENTINEL.toml", name="t", purpose="p"), out)
+    return out
+
+
+_W = ("on: push\n"
+      "        with:\n"
+      "          repository: o/sentinel\n"
+      "          ref: {sha}\n"
+      "          path: .sentinel\n")
+_SHA = "a" * 40
+
+
+def test_a_pin_far_behind_fails(tmp_path, monkeypatch):
+    """THE REGRESSION THE PIN ITSELF CREATES. Before pinning, this project was
+    always audited by the current checks. After, it can be audited by a frozen
+    copy forever — and a frozen auditor still reports green, so nothing says
+    so."""
+    out = _pinned(tmp_path, monkeypatch, [_W.format(sha=_SHA)], ahead="60")
+    assert out[0].verdict is Verdict.FAIL
+    assert out[0].needs_owner is True
+    assert "60 commits behind" in out[0].evidence
+
+
+def test_a_pin_slightly_behind_is_fine(tmp_path, monkeypatch):
+    """Being behind is the POINT — a week of ordinary work must not trip it."""
+    out = _pinned(tmp_path, monkeypatch, [_W.format(sha=_SHA)], ahead="3")
+    assert out[0].verdict is Verdict.PASS
+
+
+def test_two_workflows_pinned_differently_is_a_split_standard(tmp_path,
+                                                              monkeypatch):
+    """Both audit the same project against different checks, and the report
+    could not say which one spoke."""
+    out = _pinned(tmp_path, monkeypatch,
+                  [_W.format(sha=_SHA), _W.format(sha="b" * 40)])
+    assert out[0].verdict is Verdict.FAIL
+    assert "2 different pins" in out[0].evidence
+
+
+def test_nothing_pinned_is_not_this_checks_business(tmp_path, monkeypatch):
+    out = _pinned(tmp_path, monkeypatch,
+                  ["on: push\n        repository: o/sentinel\n"])
+    assert out == []
+
+
+def test_unknown_when_the_distance_cannot_be_measured(tmp_path, monkeypatch):
+    """UNKNOWN is never a pass."""
+    out = _pinned(tmp_path, monkeypatch, [_W.format(sha=_SHA)], ok=False)
+    assert out[0].verdict is Verdict.UNKNOWN

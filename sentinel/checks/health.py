@@ -872,6 +872,100 @@ def _the_fixer_can_act(m: Manifest, findings: list[Finding]) -> None:
         detail_he=f"{target} פעיל"))
 
 
+_PIN = re.compile(
+    r"repository:\s*([\w.-]+/[\w.-]+)[\s\S]{0,800}?^\s*ref:\s*([0-9a-f]{40})\b",
+    re.MULTILINE)
+
+# Far enough behind to mean "nobody is bumping this", near enough that a week
+# of ordinary work does not trip it.
+_PIN_LAG = 25
+
+
+def _the_auditor_pin_is_current(m: Manifest, findings: list[Finding]) -> None:
+    """Is the pinned auditor still close to the one being maintained?
+
+    WRITTEN IN THE SAME BREATH AS THE PIN IT GUARDS. Pinning sentinel stopped
+    an unreviewed commit there from changing this project's standard within
+    minutes. But a pin nobody bumps is strictly worse than no pin: before, this
+    project was always audited by the current checks; after, it can be audited
+    by a frozen copy forever, and every check written since would simply never
+    run here. The failure is silent in both directions, which is the shape this
+    whole tool exists to catch.
+
+    So the pin is allowed to be behind — that is its job — but not abandoned.
+    """
+    title = "The pinned auditor is still being kept up to date"
+    title_he = "המבקר המוצמד עדיין מתוחזק"
+
+    wf_dir = m.root / ".github" / "workflows"
+    if not which("gh") or not wf_dir.is_dir():
+        return
+
+    pins: dict[str, set[str]] = {}
+    for f in sorted(wf_dir.glob("*.y*ml")):
+        text = f.read_text(encoding="utf-8", errors="ignore")
+        for repo, sha in _PIN.findall(text):
+            pins.setdefault(repo, set()).add(sha)
+    if not pins:
+        return                             # nothing pinned by ref — not this check
+
+    behind, unknown, mixed = [], [], []
+    for repo, shas in sorted(pins.items()):
+        if len(shas) > 1:
+            # Two workflows auditing the same project with different checks is
+            # a split standard, and the report would not say which one spoke.
+            mixed.append(f"{repo}: {len(shas)} different pins")
+            continue
+        sha = next(iter(shas))
+        r = run(f"gh api repos/{repo}/compare/{sha}...HEAD --jq .ahead_by",
+                m.root, timeout_s=60)
+        if not r.ok or not r.stdout.strip().isdigit():
+            unknown.append(f"{repo}: {r.stderr.strip()[:80] or 'no answer'}")
+            continue
+        n = int(r.stdout.strip())
+        if n >= _PIN_LAG:
+            behind.append(f"{repo}: pinned {sha[:9]}, {n} commits behind")
+
+    if mixed or behind:
+        problems = mixed + behind
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he, verdict=Verdict.FAIL,
+            severity=Severity.HIGH, needs_owner=True,
+            owner_reason_he="עריכת .github/workflows אסורה לפאס — אחרת הוא "
+                            "יכול להרחיב לעצמו הרשאות",
+            detail="; ".join(problems),
+            detail_he=f"{len(problems)} הצמדות מבקר לא מתוחזקות — הפרויקט "
+                      f"נבדק בכללים ישנים, וכל בדיקה שנכתבה מאז פשוט לא רצה "
+                      f"כאן",
+            evidence="\n".join(problems),
+            remedy="Read what changed there, then bump the ref. A pin that is "
+                   "never bumped audits this project with checks that stopped "
+                   "being the standard — silently, because a frozen auditor "
+                   "still reports green.",
+            remedy_he="קרא מה השתנה שם, ואז עדכן את ה-ref. הצמדה שלא מעדכנים "
+                      "בודקת את הפרויקט בכללים שכבר אינם התקן — בשקט, כי "
+                      "מבקר קפוא עדיין מדווח ירוק."))
+        return
+
+    if unknown:
+        findings.append(Finding(
+            check=NAME, title=title, title_he=title_he,
+            verdict=Verdict.UNKNOWN, severity=Severity.MEDIUM,
+            detail="could not ask GitHub how far behind the pin is",
+            detail_he="לא הצלחתי לברר מול GitHub כמה ההצמדה מפגרת",
+            evidence="\n".join(unknown),
+            remedy="Check `gh auth status` and that the pinned repo is "
+                   "readable from here.",
+            remedy_he="בדוק `gh auth status` ושהריפו המוצמד קריא מכאן."))
+        return
+
+    findings.append(Finding(
+        check=NAME, title=title, title_he=title_he, verdict=Verdict.PASS,
+        severity=Severity.HIGH,
+        detail=f"{len(pins)} pinned repo(s), all within {_PIN_LAG} commits",
+        detail_he=f"{len(pins)} הצמדות, כולן בתוך {_PIN_LAG} קומיטים"))
+
+
 def _claude_action(m: Manifest, findings: list[Finding]) -> None:
     wf_dir = m.root / ".github" / "workflows"
     if not wf_dir.is_dir():
@@ -1151,7 +1245,8 @@ def check(m: Manifest) -> CheckResult:
         # _recurring reads `findings` as it goes, so every check whose result
         # it filters against must already have run. Order is load-bearing here.
         for step in (_tests, _ci, _ci_status, _no_workflow_always_fails,
-                     _the_fixer_can_act, _secrets, _claude_action,
+                     _the_fixer_can_act, _the_auditor_pin_is_current,
+                     _secrets, _claude_action,
                      _ignored_but_tracked, _manifest_shrank, _git,
                      _recurring, _never_passed, _improvements):
             try:
