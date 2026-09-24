@@ -69,7 +69,7 @@ jobs:
           echo "Before: ${N:-0} tests, ${L:-0} lessons"
 
       - name: Run one improvement pass
-        uses: anthropics/claude-code-action@9cdae7f0d995e3ba7c33f226087fdf82a59cd520  # v1.0.223
+        uses: anthropics/claude-code-action@4036a180cf690f49529f5d8c79c998855287f590  # v1.0.230
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # SONNET, DECLARED. What the pass was already getting by default.
