@@ -126,28 +126,28 @@ def test_an_unreadable_history_does_not_wake_it(tmp_path):
     assert daemon_should_act(_audit(tmp_path, _f(Verdict.UNKNOWN))) is False
 
 
-def test_both_audit_workflows_use_the_flag():
-    """A decision nothing calls is the bug this file exists for, one level up.
-    Both workflows must ask `--should-fix` rather than reading an exit code
-    that cannot express the question."""
-    here = Path(__file__).resolve().parent.parent
-    checked = 0
-    for wf in (here / ".github" / "workflows" / "audit.yml",
-               here.parent / "שוק-ההון" / "stock-predictor"
-               / ".github" / "workflows" / "audit.yml"):
-        if not wf.is_file():
-            continue
-        text = wf.read_text(encoding="utf-8")
-        # sentinel's own summon was REMOVED on 2026-09-24 — every project
-        # checks this repo out at `main`, unpinned, so a pass here would
-        # change the standard they are all judged by without review. A
-        # workflow that summons nothing has no gate to get wrong; requiring
-        # the flag anyway would turn a documented decision into a red suite.
-        if "Summon the daemon" not in text:
-            continue
-        assert "--should-fix" in text, f"{wf} still gates on the exit code"
-        checked += 1
-    assert checked, "no audit workflow summons a pass at all"
+def test_this_repo_no_longer_summons_a_pass_on_itself():
+    """A DECISION, PINNED SO IT CANNOT DRIFT BACK BY ACCIDENT.
+
+    Every audited project checks this repository out on every run, so a pass
+    here would change the standard they are all judged by without review. The
+    summon was removed on 2026-09-24 and `_the_fixer_can_act` reports SKIP for
+    this repo as a result.
+
+    This used to assert the OPPOSITE, for both this workflow and
+    stock-predictor's — reached across the filesystem at
+    `../שוק-ההון/stock-predictor/`, a path that exists on one laptop. In CI
+    the file was absent, the loop body never ran, and the test passed having
+    checked nothing. That guarantee now lives in stock-predictor's own suite
+    (`tests/test_summon_gate.py`), where the workflow is and where it runs on
+    every push. The place a check runs is part of the check.
+    """
+    wf = Path(__file__).resolve().parent.parent / ".github" / "workflows" / "audit.yml"
+    text = wf.read_text(encoding="utf-8")
+    assert "- name: Summon the daemon" not in text, \
+        "the summon came back — see the comment block in audit.yml"
+    assert "NO SUMMON HERE" in text, \
+        "the decision lost its explanation, which is how it gets undone"
 
 
 def test_a_recurring_warning_is_deliberately_not_enough(tmp_path):
@@ -164,34 +164,6 @@ def test_a_recurring_warning_is_deliberately_not_enough(tmp_path):
                           "verdict": "warn"}],
         }), encoding="utf-8")
     assert daemon_should_act(_audit(tmp_path, _f(Verdict.WARN))) is False
-
-
-def test_the_summon_step_can_be_exercised_on_demand():
-    """A CONTROL NOBODY CAN RUN IS A CONTROL NOBODY HAS VERIFIED.
-
-    The gate read `github.event_name == 'schedule'`, which blocked
-    `workflow_dispatch` as well — so asked to prove the daemon actually wakes,
-    the honest answer was "I cannot make it try". The loop that must be broken
-    is improve → audit → improve, and that runs through `workflow_run`, so
-    excluding that one event is both necessary and sufficient.
-    """
-    here = Path(__file__).resolve().parent.parent
-    checked = 0
-    for wf in (here / ".github" / "workflows" / "audit.yml",
-               here.parent / "שוק-ההון" / "stock-predictor"
-               / ".github" / "workflows" / "audit.yml"):
-        if not wf.is_file():
-            continue
-        text = wf.read_text(encoding="utf-8")
-        if "Summon the daemon" not in text:
-            continue                       # summons nothing — see above
-        summon = text[text.index("Summon the daemon"):]
-        gate = summon[summon.index("if:"):summon.index("\n", summon.index("if:"))]
-        assert "workflow_run" in gate, f"{wf}: the improve→audit→improve loop is open"
-        assert "== 'schedule'" not in gate, \
-            f"{wf}: gated on schedule, so the summon path cannot be tested"
-        checked += 1
-    assert checked, "no audit workflow summons a pass at all"
 
 
 def test_should_fix_prints_nothing(capsys, tmp_path, monkeypatch):
