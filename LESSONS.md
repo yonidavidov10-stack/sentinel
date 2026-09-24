@@ -119,6 +119,52 @@ The Telegram message opened with `stock-predictor`, which reads as a message
 **Check:** none — this is a wording decision, not a class of defect.
 `unmechanisable`, and that is the honest answer.
 
+## L044 — The test guarded another repo from one laptop
+**Found** 2026-09-24, when a deliberate change turned CI red · **status: closed**
+
+Two tests asserted that both audit workflows summon an improvement pass — this
+repo's and stock-predictor's — by walking to
+`../שוק-ההון/stock-predictor/.github/workflows/audit.yml`.
+
+That path exists on the owner's Mac and nowhere else. In CI the file was simply
+absent, `continue` fired, the loop body never executed, and the test passed
+having examined nothing. It had been "protecting" the other project from a
+single machine for as long as it existed.
+
+It surfaced only by accident: removing this repo's own summon took the checked
+count to zero, `assert checked` fired, and the suite went red in CI while
+staying green locally — the precise split this project has a standing rule
+against. Had one workflow still qualified, the hole would have stayed open.
+
+**Check:** none to add — the fix is structural. stock-predictor's gate is now
+tested in stock-predictor, beside the file it guards, running on every push
+there. What stayed here is what this repo can see about itself. The rule it is
+an instance of was already written: THE PLACE A CHECK RUNS IS PART OF THE
+CHECK. What is new is the shape — a cross-repository assertion degrades into
+silence rather than an error, because a missing file reads as "nothing to
+check" instead of "I could not look". That is an UNKNOWN wearing a PASS.
+
+## L043 — A pin nobody bumps is worse than no pin
+**Found** 2026-09-24, in the same breath as the pin · **status: closed**
+
+Every audited project checked sentinel out at `main`, unpinned, on every run,
+so any commit here — including an agent's — changed the standard they were all
+judged by within minutes, unreviewed. Pinning to a SHA fixes that.
+
+And immediately creates the opposite failure. Before, a project was always
+audited by the current checks. After, it can be audited by a frozen copy
+forever, and every check written since simply never runs there. Both directions
+are silent, because a frozen auditor still reports green.
+
+The first pin made the point by itself: it named the commit BEFORE the staleness
+check existed, so the guard against a frozen auditor was itself frozen out.
+
+**Check:** `_the_auditor_pin_is_current` — compare each pinned `ref:` against
+that repository's HEAD, FAIL past 25 commits. Being behind is the POINT and must
+not trip it; a pin untouched for a month is not a decision any more. Two
+workflows pinning the same repo to different SHAs also FAIL: that is a split
+standard, and the report cannot say which one spoke.
+
 ## L042 — Silencing the alarm is not fixing the thing
 **Found** 2026-09-22, by the owner saying it only ever reports · **status: closed**
 
